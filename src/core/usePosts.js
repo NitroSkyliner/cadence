@@ -1,56 +1,50 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { STATUS } from './types.js'
-import { getAdapter } from '../adapters/registry.js'
+import { useState, useEffect, useCallback } from 'react'
+
+const API = 'http://localhost:8000'
+const POLL_MS = 3000
 
 export function usePosts() {
   const [posts, setPosts] = useState([])
+  const [loading, setLoading] = useState(true)
 
-  // A ref mirror so async/interval code can read current posts without stale closures.
-  const postsRef = useRef(posts)
-  useEffect(() => { postsRef.current = posts }, [posts])
-
-  const patchPost = useCallback((id, changes) => {
-    setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, ...changes } : p)))
+  const addPost = useCallback(async (post) => {
+    setPosts((prev) => [...prev, post])           // optimistic
+    try {
+      await fetch(`${API}/posts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(post),
+      })
+    } catch (err) {
+      console.error('Failed to save post:', err)
+    }
   }, [])
 
-  const addPost = useCallback((post) => {
-    setPosts((prev) => [...prev, post])
-  }, [])
+  useEffect(() => {
+    let cancelled = false
 
-  // Run one post through ALL its platform adapters, threading it through the lifecycle.
-  const publishPost = useCallback(async (id) => {
-    const post = postsRef.current.find((p) => p.id === id)
-    if (!post || post.status === STATUS.PUBLISHING || post.status === STATUS.PUBLISHED) return
-
-    patchPost(id, { status: STATUS.PUBLISHING })
-
-    const results = {}
-    for (const platformId of post.platforms) {
+    const refresh = async () => {
       try {
-        results[platformId] = await getAdapter(platformId).publish(post)
+        const res = await fetch(`${API}/posts`)
+        const server = await res.json()
+        if (cancelled) return
+        setPosts((prev) => {
+          // Server is source of truth; keep local-only posts still in flight.
+          const ids = new Set(server.map((p) => p.id))
+          const localOnly = prev.filter((p) => !ids.has(p.id))
+          return [...server, ...localOnly]
+        })
       } catch (err) {
-        results[platformId] = { ok: false, error: err.message }
+        console.error('Failed to load posts:', err)
+      } finally {
+        if (!cancelled) setLoading(false)
       }
     }
 
-    const allOk = Object.values(results).every((r) => r.ok)
-    patchPost(id, { status: allOk ? STATUS.PUBLISHED : STATUS.FAILED, results })
-  }, [patchPost])
+    refresh()
+    const id = setInterval(refresh, POLL_MS)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
 
-  // Client-side due-checker: fires posts whose time has arrived.
-  // This is a STAND-IN for Phase 3's real always-on backend worker — it only
-  // runs while the app is open. Same lifecycle, throwaway trigger.
-  useEffect(() => {
-    const tick = setInterval(() => {
-      const now = Date.now()
-      for (const p of postsRef.current) {
-        if (p.status === STATUS.SCHEDULED && new Date(p.scheduledAt).getTime() <= now) {
-          publishPost(p.id)
-        }
-      }
-    }, 3000)
-    return () => clearInterval(tick)
-  }, [publishPost])
-
-  return { posts, addPost, publishPost }
+  return { posts, addPost, loading }
 }

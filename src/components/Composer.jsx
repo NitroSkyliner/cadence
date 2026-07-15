@@ -1,8 +1,6 @@
 import { useState } from 'react'
 import { Send } from 'lucide-react'
-import { allPlatforms } from '../adapters/registry.js'
-import { createPost } from '../core/types.js'
-
+import { allPlatforms, createPost } from '../core/types.js'
 // "YYYY-MM-DDTHH:mm" in LOCAL wall-clock time, for <input type="datetime-local">.
 function nowLocalInput() {
   const d = new Date()

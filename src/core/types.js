@@ -33,3 +33,7 @@ export function createPost({ text, platforms, scheduledAt }) {
  * @property {Object}   results      per-platform publish result, keyed by platform id
  * @property {number}   createdAt
  */
+
+export function allPlatforms() {
+  return Object.values(PLATFORMS)
+}

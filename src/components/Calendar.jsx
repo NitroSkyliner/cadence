@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { STATUS, PLATFORMS } from '../core/types.js'
+import { startOfWeek, sameDay } from '../core/dates.js'
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
 
@@ -11,19 +12,6 @@ const CHIP = {
   [STATUS.PUBLISHED]:  'border-emerald-500/40 bg-emerald-500/10 text-emerald-400',
   [STATUS.FAILED]:     'border-red-500/40 bg-red-500/10 text-red-400',
 }
-
-function startOfWeek(date) {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  const offset = (d.getDay() + 6) % 7   // Mon=0 … Sun=6
-  d.setDate(d.getDate() - offset)
-  return d
-}
-
-const sameDay = (a, b) =>
-  a.getFullYear() === b.getFullYear() &&
-  a.getMonth() === b.getMonth() &&
-  a.getDate() === b.getDate()
 
 export default function Calendar({ posts }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
