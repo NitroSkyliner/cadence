@@ -15,11 +15,11 @@ export const PLATFORMS = {
 }
 
 let counter = 0
-export function createPost({ text, platforms, scheduledAt }) {
+export function createPost({ text, platforms, scheduledAt, status = STATUS.SCHEDULED }) {
   return {
     id: `post_${Date.now()}_${counter++}`,
     text, platforms, scheduledAt,
-        status: STATUS.SCHEDULED, results: {}, metrics: {}, createdAt: Date.now(),
+    status, results: {}, metrics: {}, createdAt: Date.now(),
   }
 }
 

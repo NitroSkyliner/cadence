@@ -6,15 +6,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from models import Post, PostPatch
-from db import (
-    init_db, list_posts, upsert_post, patch_post,
-    get_credentials, set_credentials, delete_credentials,
-)
 from config import bluesky_credentials
 from adapters.registry import (
     get_adapter, invalidate, is_live, is_supported, make_real_adapter, PLATFORM_IDS,
 )
-
+from db import (
+    init_db, list_posts, upsert_post, patch_post, get_post, delete_post,
+    get_credentials, set_credentials, delete_credentials,
+)
 POLL_SECONDS = 3
 
 
@@ -96,15 +95,26 @@ def get_posts() -> list[dict]:
 def create_post(post: Post) -> dict:
     return upsert_post(post)
 
-
 @app.patch("/posts/{post_id}")
 def update_post(post_id: str, patch: PostPatch) -> dict:
     changes = patch.model_dump(exclude_unset=True)
+    existing = get_post(post_id)
+    if existing is None:
+        raise HTTPException(404, "Post not found")
+    # Don't let content be edited once it's on its way out.
+    if {"text", "platforms", "scheduledAt"} & changes.keys() \
+            and existing["status"] in ("publishing", "published"):
+        raise HTTPException(409, "Can't edit a post that's already publishing or published")
     updated = patch_post(post_id, changes)
     if updated is None:
-        raise HTTPException(status_code=404, detail="Post not found")
+        raise HTTPException(404, "Post not found")
     return updated
 
+
+@app.delete("/posts/{post_id}")
+def remove_post(post_id: str) -> dict:
+    delete_post(post_id)
+    return {"ok": True, "id": post_id}
 
 # ---- metrics ----
 @app.post("/metrics/refresh")

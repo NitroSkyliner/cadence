@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { Send } from 'lucide-react'
-import { allPlatforms, createPost } from '../core/types.js'
-// "YYYY-MM-DDTHH:mm" in LOCAL wall-clock time, for <input type="datetime-local">.
+import { useState, useEffect } from 'react'
+import { Send, FileText, X } from 'lucide-react'
+import { allPlatforms, createPost, STATUS } from '../core/types.js'
+
 function nowLocalInput() {
   const d = new Date()
   d.setSeconds(0, 0)
@@ -9,32 +9,72 @@ function nowLocalInput() {
   return local.toISOString().slice(0, 16)
 }
 
-export default function Composer({ onSchedule }) {
+function isoToLocalInput(iso) {
+  const d = new Date(iso)
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+  return local.toISOString().slice(0, 16)
+}
+
+export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, onCancelEdit }) {
   const [text, setText] = useState('')
   const [selected, setSelected] = useState({})
   const [when, setWhen] = useState(nowLocalInput())
+
+  const isEditing = Boolean(editing)
+
+  // Re-sync only when the *identity* of the edited post changes (editing?.id),
+  // NOT on every poll — otherwise background refreshes would clobber your typing.
+  useEffect(() => {
+    if (editing) {
+      setText(editing.text)
+      setSelected(Object.fromEntries(editing.platforms.map((id) => [id, true])))
+      setWhen(isoToLocalInput(editing.scheduledAt))
+    } else {
+      setText(''); setSelected({}); setWhen(nowLocalInput())
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.id])
 
   const platforms = allPlatforms()
   const chosen = platforms.filter((p) => selected[p.id])
   const limit = chosen.length ? Math.min(...chosen.map((p) => p.maxLen)) : null
   const over = limit != null && text.length > limit
-  const canSchedule = text.trim() && chosen.length > 0 && !over
+  const hasContent = text.trim().length > 0
+  const canSchedule = hasContent && chosen.length > 0 && !over
+  const canDraft = hasContent && !over
 
   const toggle = (id) => setSelected((s) => ({ ...s, [id]: !s[id] }))
+  const reset = () => { setText(''); setSelected({}); setWhen(nowLocalInput()) }
 
-  const submit = () => {
+  const payload = () => ({
+    text: text.trim(),
+    platforms: chosen.map((p) => p.id),
+    scheduledAt: new Date(when).toISOString(),
+  })
+
+  const schedule = () => {
     if (!canSchedule) return
-    onSchedule(createPost({
-      text: text.trim(),
-      platforms: chosen.map((p) => p.id),
-      scheduledAt: new Date(when).toISOString(),
-    }))
-    setText(''); setSelected({}); setWhen(nowLocalInput())
+    if (isEditing) onUpdate(editing.id, { ...payload(), status: STATUS.SCHEDULED })
+    else { onSchedule(createPost({ ...payload(), status: STATUS.SCHEDULED })); reset() }
+  }
+
+  const saveDraft = () => {
+    if (!canDraft) return
+    if (isEditing) onUpdate(editing.id, { ...payload(), status: STATUS.DRAFT })
+    else { onSaveDraft(createPost({ ...payload(), status: STATUS.DRAFT })); reset() }
   }
 
   return (
     <section className="rounded-xl border border-line bg-surface p-5">
-      <p className="mb-4 font-mono text-xs tracking-wider text-muted">COMPOSER</p>
+      <div className="mb-4 flex items-center justify-between">
+        <p className="font-mono text-xs tracking-wider text-muted">{isEditing ? 'EDIT POST' : 'COMPOSER'}</p>
+        {isEditing && (
+          <button onClick={onCancelEdit}
+            className="inline-flex items-center gap-1 font-mono text-[11px] text-muted transition hover:text-fg">
+            <X size={12} strokeWidth={2} /> CANCEL
+          </button>
+        )}
+      </div>
 
       <textarea
         value={text}
@@ -65,10 +105,16 @@ export default function Composer({ onSchedule }) {
         </span>
       </div>
 
-      <button onClick={submit} disabled={!canSchedule}
-        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-coral px-4 py-2 text-sm font-medium text-white transition duration-100 enabled:hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-40">
-        <Send size={16} strokeWidth={2} /> Schedule post
-      </button>
+      <div className="mt-4 flex gap-2">
+        <button onClick={saveDraft} disabled={!canDraft}
+          className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-line px-4 py-2 text-sm text-muted transition enabled:hover:border-coral/40 enabled:hover:text-fg disabled:cursor-not-allowed disabled:opacity-40">
+          <FileText size={16} strokeWidth={1.75} /> Save draft
+        </button>
+        <button onClick={schedule} disabled={!canSchedule}
+          className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-coral px-4 py-2 text-sm font-medium text-white transition duration-100 enabled:hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-40">
+          <Send size={16} strokeWidth={2} /> {isEditing ? 'Update' : 'Schedule post'}
+        </button>
+      </div>
     </section>
   )
 }

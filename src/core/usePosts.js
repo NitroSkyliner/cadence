@@ -20,6 +20,30 @@ export function usePosts() {
     }
   }, [])
 
+  const updatePost = useCallback(async (id, changes) => {
+    try {
+      const res = await fetch(`${API}/posts/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(changes),
+      })
+      if (!res.ok) throw new Error(`PATCH failed: ${res.status}`)
+      const updated = await res.json()
+      setPosts((prev) => prev.map((p) => (p.id === id ? updated : p)))
+    } catch (err) {
+      console.error('Failed to update post:', err)
+    }
+  }, [])
+
+  const deletePost = useCallback(async (id) => {
+    try {
+      await fetch(`${API}/posts/${id}`, { method: 'DELETE' })
+      setPosts((prev) => prev.filter((p) => p.id !== id))
+    } catch (err) {
+      console.error('Failed to delete post:', err)
+    }
+  }, [])
+
   const refreshMetrics = useCallback(async () => {
     try {
       const res = await fetch(`${API}/metrics/refresh`, { method: 'POST' })
@@ -55,5 +79,4 @@ export function usePosts() {
     return () => { cancelled = true; clearInterval(id) }
   }, [])
 
-  return { posts, addPost, refreshMetrics, loading }
-}
+  return { posts, addPost, updatePost, deletePost, refreshMetrics, loading }}

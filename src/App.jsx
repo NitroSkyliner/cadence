@@ -17,10 +17,17 @@ const NAV = [
 ]
 
 export default function App() {
-  const { posts, addPost, refreshMetrics } = usePosts()
+  const { posts, addPost, updatePost, deletePost, refreshMetrics } = usePosts()
   const [view, setView] = useState('queue')
   const scheduledCount = posts.filter((p) => p.status === STATUS.SCHEDULED).length
   const activeLabel = NAV.find((n) => n.id === view)?.label ?? ''
+  const [editingId, setEditingId] = useState(null)
+  const editing = posts.find((p) => p.id === editingId) || null
+
+  const handleUpdate = async (id, changes) => {
+    await updatePost(id, changes)
+    setEditingId(null)
+  }
 
   return (
     <div className="flex min-h-screen bg-ink font-display text-fg">
@@ -58,8 +65,14 @@ export default function App() {
         <main className="flex-1 p-8">
           {view === 'queue' && (
             <div className="grid gap-6 lg:grid-cols-[minmax(0,380px)_1fr]">
-              <Composer onSchedule={addPost} />
-              <Queue posts={posts} />
+              <Composer
+                editing={editing}
+                onSchedule={addPost}
+                onSaveDraft={addPost}
+                onUpdate={handleUpdate}
+                onCancelEdit={() => setEditingId(null)}
+              />
+              <Queue posts={posts} onEdit={setEditingId} onDelete={deletePost} />
             </div>
           )}
           {view === 'calendar' && <Calendar posts={posts} />}

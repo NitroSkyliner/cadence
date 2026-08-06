@@ -29,6 +29,7 @@ export default function Insights({ posts, onRefresh }) {
     { label: 'scheduled', value: count(STATUS.SCHEDULED), tone: 'text-fg' },
     { label: 'published', value: count(STATUS.PUBLISHED), tone: 'text-emerald-400' },
     { label: 'failed',    value: failed, tone: failed ? 'text-red-400' : 'text-fg' },
+    { label: 'drafts',    value: count(STATUS.DRAFT), tone: 'text-fg' },
   ]
   const engStats = [
     { label: 'likes',   value: eng.likes },

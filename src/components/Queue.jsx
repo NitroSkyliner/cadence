@@ -1,5 +1,8 @@
+import { Pencil, Trash2 } from 'lucide-react'
 import StatusPill from './StatusPill.jsx'
-import { PLATFORMS } from '../core/types.js'
+import { STATUS, PLATFORMS } from '../core/types.js'
+
+const EDITABLE = new Set([STATUS.DRAFT, STATUS.SCHEDULED, STATUS.FAILED])
 
 function fmtTime(iso) {
   const d = new Date(iso)
@@ -8,7 +11,7 @@ function fmtTime(iso) {
   return `${day} ${time}`
 }
 
-export default function Queue({ posts }) {
+export default function Queue({ posts, onEdit, onDelete }) {
   const sorted = [...posts].sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt))
 
   return (
@@ -23,7 +26,7 @@ export default function Queue({ posts }) {
         <ul className="flex flex-col gap-2">
           {sorted.map((post) => (
             <li key={post.id}
-              className="flex items-center gap-3 rounded-lg border border-line bg-elevated px-3 py-2.5">
+              className="group flex items-center gap-3 rounded-lg border border-line bg-elevated px-3 py-2.5">
               <span className="w-24 shrink-0 font-mono text-xs text-muted">{fmtTime(post.scheduledAt)}</span>
               <span className="flex-1 truncate text-sm text-fg">{post.text}</span>
               <span className="flex shrink-0 gap-1">
@@ -34,6 +37,18 @@ export default function Queue({ posts }) {
                 ))}
               </span>
               <StatusPill status={post.status} />
+              <span className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                {EDITABLE.has(post.status) && (
+                  <button onClick={() => onEdit(post.id)} title="Edit"
+                    className="grid h-7 w-7 place-items-center rounded-md text-muted transition hover:bg-ink hover:text-fg">
+                    <Pencil size={14} strokeWidth={1.75} />
+                  </button>
+                )}
+                <button onClick={() => onDelete(post.id)} title="Delete"
+                  className="grid h-7 w-7 place-items-center rounded-md text-muted transition hover:bg-ink hover:text-red-400">
+                  <Trash2 size={14} strokeWidth={1.75} />
+                </button>
+              </span>
             </li>
           ))}
         </ul>

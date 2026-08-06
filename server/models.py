@@ -26,6 +26,9 @@ class Post(BaseModel):
 
 
 class PostPatch(BaseModel):
+    text: Optional[str] = None
+    platforms: Optional[list[str]] = None
+    scheduledAt: Optional[str] = None
     status: Optional[str] = None
     results: Optional[dict[str, PublishResult]] = None
     metrics: Optional[dict[str, PlatformMetrics]] = None

@@ -92,25 +92,26 @@ def upsert_post(post: Post) -> dict:
         )
     return post.model_dump()
 
+_JSON_COLS = {"platforms", "results", "metrics"}
+_MUTABLE = {"text", "platforms", "scheduledAt", "status", "results", "metrics"}
+
 
 def patch_post(post_id: str, changes: dict) -> dict | None:
     existing = get_post(post_id)
     if existing is None:
         return None
-    existing.update(changes)
+    fields = {k: v for k, v in changes.items() if k in _MUTABLE}
+    if not fields:
+        return existing
+    existing.update(fields)
+    sets, values = [], []
+    for k in fields:
+        sets.append(f"{k} = ?")
+        values.append(json.dumps(existing[k]) if k in _JSON_COLS else existing[k])
+    values.append(post_id)
     with _conn() as c:
-        c.execute(
-            "UPDATE posts SET status = ?, results = ?, metrics = ? WHERE id = ?",
-            (
-                existing["status"],
-                json.dumps(existing["results"]),
-                json.dumps(existing["metrics"]),
-                post_id,
-            ),
-        )
+        c.execute(f"UPDATE posts SET {', '.join(sets)} WHERE id = ?", values)
     return existing
-
-
 
 def get_credentials(platform: str) -> dict | None:
     with _conn() as c:
@@ -129,3 +130,8 @@ def set_credentials(platform: str, data: dict):
 def delete_credentials(platform: str):
     with _conn() as c:
         c.execute("DELETE FROM credentials WHERE platform = ?", (platform,))
+
+
+def delete_post(post_id: str):
+    with _conn() as c:
+        c.execute("DELETE FROM posts WHERE id = ?", (post_id,))
