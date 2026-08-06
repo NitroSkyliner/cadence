@@ -1,7 +1,7 @@
 from .mock import MockAdapter
 from .bluesky import BlueskyAdapter
-from db import get_credentials
 from .mastodon import MastodonAdapter
+from db import get_credentials
 
 PLATFORM_IDS = ["bluesky", "mastodon", "instagram", "x", "linkedin"]
 
@@ -9,6 +9,9 @@ PLATFORM_IDS = ["bluesky", "mastodon", "instagram", "x", "linkedin"]
 def _build_bluesky(creds):
     return BlueskyAdapter(creds["handle"], creds["app_password"])
 
+
+def _build_mastodon(creds):
+    return MastodonAdapter(creds["instance_url"], creds["access_token"])
 
 # platform_id -> builder(creds) -> real Adapter. Add real platforms here.
 _BUILDERS = {
@@ -56,6 +59,3 @@ def is_supported(platform_id):
 
 def is_live(platform_id):
     return bool(_BUILDERS.get(platform_id) and get_credentials(platform_id))
-
-def _build_mastodon(creds):
-    return MastodonAdapter(creds["instance_url"], creds["access_token"])
