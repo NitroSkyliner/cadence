@@ -3,6 +3,19 @@ import { Check, X, Loader2 } from 'lucide-react'
 import { API } from '../core/api.js'
 import { PLATFORMS } from '../core/types.js'
 
+// Per-platform connect form fields. Add a platform here + a builder on the
+// server registry and it becomes connectable with zero other UI changes.
+const CONNECT_FIELDS = {
+  bluesky: [
+    { name: 'handle', placeholder: 'handle.bsky.social', type: 'text' },
+    { name: 'app_password', placeholder: 'app password (xxxx-xxxx-xxxx-xxxx)', type: 'password', mono: true },
+  ],
+  mastodon: [
+    { name: 'instance_url', placeholder: 'https://mastodon.social', type: 'text' },
+    { name: 'access_token', placeholder: 'access token', type: 'password', mono: true },
+  ],
+}
+
 export default function Accounts() {
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -38,24 +51,28 @@ export default function Accounts() {
 
 function AccountRow({ account, onChange }) {
   const meta = PLATFORMS[account.id]
-  const [handle, setHandle] = useState('')
-  const [appPassword, setAppPassword] = useState('')
+  const fields = CONNECT_FIELDS[account.id] || []
+  const [values, setValues] = useState({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+
+  const setField = (name, v) => setValues((s) => ({ ...s, [name]: v }))
+  const allFilled = fields.every((f) => (values[f.name] || '').trim())
 
   const connect = async () => {
     setBusy(true); setError(null)
     try {
+      const body = Object.fromEntries(fields.map((f) => [f.name, (values[f.name] || '').trim()]))
       const res = await fetch(`${API}/accounts/${account.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle: handle.trim(), app_password: appPassword.trim() }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body.detail || 'Could not connect')
+        const b = await res.json().catch(() => ({}))
+        throw new Error(b.detail || 'Could not connect')
       }
-      setHandle(''); setAppPassword(''); onChange()
+      setValues({}); onChange()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -86,7 +103,7 @@ function AccountRow({ account, onChange }) {
             <div className="text-sm font-medium text-fg">{meta?.label ?? account.id}</div>
             <div className="font-mono text-[11px] text-muted">
               {account.connected
-                ? `Connected · @${account.account}`
+                ? `Connected · ${account.account}`
                 : account.supported ? 'Not connected' : 'Coming soon'}
             </div>
           </div>
@@ -104,14 +121,13 @@ function AccountRow({ account, onChange }) {
 
       {account.supported && !account.connected && (
         <div className="mt-4 flex flex-col gap-2">
-          <input value={handle} onChange={(e) => setHandle(e.target.value)}
-            placeholder="handle.bsky.social"
-            className="rounded-lg border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted outline-none transition focus:border-coral" />
-          <input value={appPassword} onChange={(e) => setAppPassword(e.target.value)}
-            type="password" placeholder="app password (xxxx-xxxx-xxxx-xxxx)"
-            className="rounded-lg border border-line bg-elevated px-3 py-2 font-mono text-sm text-fg placeholder:text-muted outline-none transition focus:border-coral" />
+          {fields.map((f) => (
+            <input key={f.name} value={values[f.name] || ''} onChange={(e) => setField(f.name, e.target.value)}
+              type={f.type} placeholder={f.placeholder}
+              className={`rounded-lg border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted outline-none transition focus:border-coral ${f.mono ? 'font-mono' : ''}`} />
+          ))}
           {error && <p className="font-mono text-[11px] text-red-400">{error}</p>}
-          <button onClick={connect} disabled={busy || !handle.trim() || !appPassword.trim()}
+          <button onClick={connect} disabled={busy || !allFilled}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-coral px-4 py-2 text-sm font-medium text-white transition duration-100 enabled:hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-40">
             {busy && <Loader2 size={15} strokeWidth={2} className="animate-spin" />}
             {busy ? 'Verifying…' : 'Connect'}

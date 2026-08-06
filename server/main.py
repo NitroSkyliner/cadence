@@ -134,6 +134,12 @@ async def refresh_metrics() -> list[dict]:
     return list_posts()
 
 
+REQUIRED_FIELDS = {
+    "bluesky":  ["handle", "app_password"],
+    "mastodon": ["instance_url", "access_token"],
+}
+
+
 # ---- accounts ----
 @app.get("/accounts")
 def get_accounts() -> list[dict]:
@@ -156,19 +162,20 @@ async def connect_account(platform: str, creds: dict) -> dict:
     if not is_supported(platform):
         raise HTTPException(400, f"{platform} isn't supported for real posting yet")
 
-    if platform == "bluesky":
-        handle = (creds.get("handle") or "").strip()
-        app_password = (creds.get("app_password") or "").strip()
-        if not handle or not app_password:
-            raise HTTPException(422, "handle and app_password are required")
-        data = {"handle": handle, "app_password": app_password}
-    else:
-        data = creds
+    data = {}
+    for field in REQUIRED_FIELDS.get(platform, []):
+        val = (creds.get(field) or "").strip()
+        if not val:
+            raise HTTPException(422, f"{field} is required")
+        data[field] = val
 
     try:
-        await make_real_adapter(platform, data).verify()      # log in before saving
+        resolved = await make_real_adapter(platform, data).verify()   # logs in / validates
     except Exception as e:
         raise HTTPException(400, f"Could not connect: {e}")
+
+    if resolved:
+        data["handle"] = resolved
 
     set_credentials(platform, data)
     invalidate(platform)

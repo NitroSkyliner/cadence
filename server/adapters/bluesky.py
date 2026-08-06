@@ -39,5 +39,6 @@ class BlueskyAdapter(Adapter):
         except Exception:
             self._client = None
             raise
-    async def verify(self) -> None:
+    async def verify(self) -> str | None:
         await self._get_client()          # logs in; raises if handle/password are wrong
+        return self._handle
