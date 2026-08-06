@@ -15,7 +15,7 @@ const NAV = [
 ]
 
 export default function App() {
-  const { posts, addPost } = usePosts()
+  const { posts, addPost, refreshMetrics } = usePosts()
   const [view, setView] = useState('queue')
   const scheduledCount = posts.filter((p) => p.status === STATUS.SCHEDULED).length
   const activeLabel = NAV.find((n) => n.id === view)?.label ?? ''
@@ -60,7 +60,7 @@ export default function App() {
             </div>
           )}
           {view === 'calendar' && <Calendar posts={posts} />}
-          {view === 'insights' && <Insights posts={posts} />}
+          {view === 'insights' && <Insights posts={posts} onRefresh={refreshMetrics} />}
         </main>
       </div>
     </div>

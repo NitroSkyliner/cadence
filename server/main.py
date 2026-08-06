@@ -88,3 +88,20 @@ def update_post(post_id: str, patch: PostPatch) -> dict:
     if updated is None:
         raise HTTPException(status_code=404, detail="Post not found")
     return updated
+
+
+@app.post("/metrics/refresh")
+async def refresh_metrics() -> list[dict]:
+    for post in list_posts():
+        if post["status"] != "published":
+            continue
+        metrics = {}
+        for platform_id, result in post["results"].items():
+            if result.get("ok") and result.get("ref"):
+                try:
+                    metrics[platform_id] = await get_adapter(platform_id).fetch_metrics(result["ref"])
+                except Exception as e:
+                    print(f"[metrics] {post['id']} {platform_id}: {e}")
+        if metrics:
+            patch_post(post["id"], {"metrics": metrics})
+    return list_posts()

@@ -19,7 +19,7 @@ export function createPost({ text, platforms, scheduledAt }) {
   return {
     id: `post_${Date.now()}_${counter++}`,
     text, platforms, scheduledAt,
-    status: STATUS.SCHEDULED, results: {}, createdAt: Date.now(),
+        status: STATUS.SCHEDULED, results: {}, metrics: {}, createdAt: Date.now(),
   }
 }
 

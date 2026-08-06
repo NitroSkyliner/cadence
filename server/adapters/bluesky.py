@@ -25,3 +25,17 @@ class BlueskyAdapter(Adapter):
         except Exception as e:
             self._client = None                         # force re-login next time
             return {"ok": False, "error": str(e)}
+
+    async def fetch_metrics(self, ref: str) -> dict:
+        try:
+            client = await self._get_client()
+            response = await client.get_posts([ref])
+            post = response.posts[0] if response.posts else None
+            return {
+                "likes":   (post.like_count   if post else 0) or 0,
+                "reposts": (post.repost_count if post else 0) or 0,
+                "replies": (post.reply_count  if post else 0) or 0,
+            }
+        except Exception:
+            self._client = None
+            raise

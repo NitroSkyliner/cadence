@@ -13,6 +13,6 @@ class MockAdapter(Adapter):
         return {"ok": True, "ref": f"mock_{self.platform_id}_{int(time.time() * 1000)}"}
 
     async def fetch_metrics(self, ref: str) -> dict:
-        await asyncio.sleep(0.4)
-        n = lambda: random.randint(0, 500)
-        return {"likes": n(), "reposts": n(), "replies": n(), "views": n() * 10}
+            await asyncio.sleep(0.4)
+            n = lambda: random.randint(0, 500)
+            return {"likes": n(), "reposts": n(), "replies": n()}

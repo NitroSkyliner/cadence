@@ -25,13 +25,18 @@ def init_db():
             CREATE TABLE IF NOT EXISTS posts (
                 id          TEXT PRIMARY KEY,
                 text        TEXT NOT NULL,
-                platforms   TEXT NOT NULL,   -- JSON array
+                platforms   TEXT NOT NULL,
                 scheduledAt TEXT NOT NULL,
                 status      TEXT NOT NULL,
-                results     TEXT NOT NULL,   -- JSON object
+                results     TEXT NOT NULL,
+                metrics     TEXT NOT NULL DEFAULT '{}',
                 createdAt   INTEGER NOT NULL
             )
         """)
+        # Migration for DBs created before the metrics column existed.
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(posts)").fetchall()}
+        if "metrics" not in cols:
+            c.execute("ALTER TABLE posts ADD COLUMN metrics TEXT NOT NULL DEFAULT '{}'")
 
 
 def _row_to_post(row) -> dict:
@@ -42,6 +47,7 @@ def _row_to_post(row) -> dict:
         "scheduledAt": row["scheduledAt"],
         "status": row["status"],
         "results": json.loads(row["results"]),
+        "metrics": json.loads(row["metrics"]),
         "createdAt": row["createdAt"],
     }
 
@@ -62,8 +68,8 @@ def upsert_post(post: Post) -> dict:
     with _conn() as c:
         c.execute(
             """INSERT OR REPLACE INTO posts
-               (id, text, platforms, scheduledAt, status, results, createdAt)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (id, text, platforms, scheduledAt, status, results, metrics, createdAt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 post.id,
                 post.text,
@@ -71,6 +77,7 @@ def upsert_post(post: Post) -> dict:
                 post.scheduledAt,
                 post.status,
                 json.dumps({k: v.model_dump() for k, v in post.results.items()}),
+                json.dumps({k: v.model_dump() for k, v in post.metrics.items()}),
                 post.createdAt,
             ),
         )
@@ -81,10 +88,15 @@ def patch_post(post_id: str, changes: dict) -> dict | None:
     existing = get_post(post_id)
     if existing is None:
         return None
-    existing.update(changes)                      # merge only provided fields
+    existing.update(changes)
     with _conn() as c:
         c.execute(
-            "UPDATE posts SET status = ?, results = ? WHERE id = ?",
-            (existing["status"], json.dumps(existing["results"]), post_id),
+            "UPDATE posts SET status = ?, results = ?, metrics = ? WHERE id = ?",
+            (
+                existing["status"],
+                json.dumps(existing["results"]),
+                json.dumps(existing["metrics"]),
+                post_id,
+            ),
         )
     return existing

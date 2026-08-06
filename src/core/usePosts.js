@@ -20,6 +20,15 @@ export function usePosts() {
     }
   }, [])
 
+  const refreshMetrics = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/metrics/refresh`, { method: 'POST' })
+      setPosts(await res.json())
+    } catch (err) {
+      console.error('Failed to refresh metrics:', err)
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
 
@@ -46,5 +55,5 @@ export function usePosts() {
     return () => { cancelled = true; clearInterval(id) }
   }, [])
 
-  return { posts, addPost, loading }
+  return { posts, addPost, refreshMetrics, loading }
 }
