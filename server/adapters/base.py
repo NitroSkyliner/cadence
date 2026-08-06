@@ -7,3 +7,7 @@ class Adapter:
 
     async def fetch_metrics(self, ref: str) -> dict:
         raise NotImplementedError(f"{self.platform_id}: fetch_metrics() not implemented")
+
+    async def verify(self) -> None:
+        """Raise if credentials are invalid. Default (mock): always succeeds."""
+        pass

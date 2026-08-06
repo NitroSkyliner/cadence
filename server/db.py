@@ -1,4 +1,5 @@
 import json
+import time
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
@@ -37,6 +38,14 @@ def init_db():
         cols = {r["name"] for r in c.execute("PRAGMA table_info(posts)").fetchall()}
         if "metrics" not in cols:
             c.execute("ALTER TABLE posts ADD COLUMN metrics TEXT NOT NULL DEFAULT '{}'")
+
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS credentials (
+                platform     TEXT PRIMARY KEY,
+                data         TEXT NOT NULL,   -- JSON blob (handle, secret, etc.)
+                connected_at INTEGER NOT NULL
+            )
+        """)
 
 
 def _row_to_post(row) -> dict:
@@ -100,3 +109,23 @@ def patch_post(post_id: str, changes: dict) -> dict | None:
             ),
         )
     return existing
+
+
+
+def get_credentials(platform: str) -> dict | None:
+    with _conn() as c:
+        row = c.execute("SELECT data FROM credentials WHERE platform = ?", (platform,)).fetchone()
+    return json.loads(row["data"]) if row else None
+
+
+def set_credentials(platform: str, data: dict):
+    with _conn() as c:
+        c.execute(
+            "INSERT OR REPLACE INTO credentials (platform, data, connected_at) VALUES (?, ?, ?)",
+            (platform, json.dumps(data), int(time.time() * 1000)),
+        )
+
+
+def delete_credentials(platform: str):
+    with _conn() as c:
+        c.execute("DELETE FROM credentials WHERE platform = ?", (platform,))

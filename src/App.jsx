@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { ListChecks, CalendarDays, BarChart3 } from 'lucide-react'
 import { Logo } from './components/Logo.jsx'
 import Composer from './components/Composer.jsx'
 import Queue from './components/Queue.jsx'
@@ -7,11 +6,14 @@ import Calendar from './components/Calendar.jsx'
 import { usePosts } from './core/usePosts.js'
 import { STATUS } from './core/types.js'
 import Insights from './components/Insights.jsx'
+import { ListChecks, CalendarDays, BarChart3, Plug } from 'lucide-react'
+import Accounts from './components/Accounts.jsx'
 
 const NAV = [
   { id: 'queue', label: 'Queue', icon: ListChecks },
   { id: 'calendar', label: 'Calendar', icon: CalendarDays },
   { id: 'insights', label: 'Insights', icon: BarChart3 },
+  { id: 'accounts', label: 'Accounts', icon: Plug },
 ]
 
 export default function App() {
@@ -38,7 +40,8 @@ export default function App() {
           ))}
         </nav>
         <div className="mt-auto p-4">
-          <button className="w-full rounded-lg border border-line px-3 py-2 text-sm text-muted transition hover:border-coral/40 hover:text-fg">
+          <button onClick={() => setView('accounts')}
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-muted transition hover:border-coral/40 hover:text-fg">
             Connect account
           </button>
         </div>
@@ -61,6 +64,7 @@ export default function App() {
           )}
           {view === 'calendar' && <Calendar posts={posts} />}
           {view === 'insights' && <Insights posts={posts} onRefresh={refreshMetrics} />}
+          {view === 'accounts' && <Accounts />}
         </main>
       </div>
     </div>

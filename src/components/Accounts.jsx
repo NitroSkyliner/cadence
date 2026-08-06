@@ -1,0 +1,134 @@
+import { useState, useEffect, useCallback } from 'react'
+import { Check, X, Loader2 } from 'lucide-react'
+import { API } from '../core/api.js'
+import { PLATFORMS } from '../core/types.js'
+
+export default function Accounts() {
+  const [accounts, setAccounts] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/accounts`)
+      setAccounts(await res.json())
+    } catch (err) {
+      console.error('Failed to load accounts:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  if (loading) return <p className="py-8 text-center text-sm text-muted">Loading accounts…</p>
+
+  return (
+    <div className="mx-auto max-w-2xl">
+      <p className="mb-4 font-mono text-xs tracking-wider text-muted">CONNECTED ACCOUNTS</p>
+      <div className="flex flex-col gap-3">
+        {accounts.map((acc) => <AccountRow key={acc.id} account={acc} onChange={load} />)}
+      </div>
+      <p className="mt-6 text-xs leading-relaxed text-muted">
+        Credentials live on your local Cadence server, never in the browser. Connected platforms
+        post for real; everything else runs on a mock adapter so you can build and test freely.
+      </p>
+    </div>
+  )
+}
+
+function AccountRow({ account, onChange }) {
+  const meta = PLATFORMS[account.id]
+  const [handle, setHandle] = useState('')
+  const [appPassword, setAppPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  const connect = async () => {
+    setBusy(true); setError(null)
+    try {
+      const res = await fetch(`${API}/accounts/${account.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle: handle.trim(), app_password: appPassword.trim() }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.detail || 'Could not connect')
+      }
+      setHandle(''); setAppPassword(''); onChange()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const disconnect = async () => {
+    setBusy(true); setError(null)
+    try {
+      await fetch(`${API}/accounts/${account.id}`, { method: 'DELETE' })
+      onChange()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-line bg-surface p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="grid h-9 w-9 place-items-center rounded-lg bg-elevated font-mono text-xs text-muted">
+            {meta?.short ?? account.id.slice(0, 2).toUpperCase()}
+          </span>
+          <div>
+            <div className="text-sm font-medium text-fg">{meta?.label ?? account.id}</div>
+            <div className="font-mono text-[11px] text-muted">
+              {account.connected
+                ? `Connected · @${account.account}`
+                : account.supported ? 'Not connected' : 'Coming soon'}
+            </div>
+          </div>
+        </div>
+        {account.connected ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400">
+            <Check size={12} strokeWidth={2} /> Live
+          </span>
+        ) : account.supported ? (
+          <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-muted">Mock</span>
+        ) : (
+          <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-muted/50">Soon</span>
+        )}
+      </div>
+
+      {account.supported && !account.connected && (
+        <div className="mt-4 flex flex-col gap-2">
+          <input value={handle} onChange={(e) => setHandle(e.target.value)}
+            placeholder="handle.bsky.social"
+            className="rounded-lg border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted outline-none transition focus:border-coral" />
+          <input value={appPassword} onChange={(e) => setAppPassword(e.target.value)}
+            type="password" placeholder="app password (xxxx-xxxx-xxxx-xxxx)"
+            className="rounded-lg border border-line bg-elevated px-3 py-2 font-mono text-sm text-fg placeholder:text-muted outline-none transition focus:border-coral" />
+          {error && <p className="font-mono text-[11px] text-red-400">{error}</p>}
+          <button onClick={connect} disabled={busy || !handle.trim() || !appPassword.trim()}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-coral px-4 py-2 text-sm font-medium text-white transition duration-100 enabled:hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-40">
+            {busy && <Loader2 size={15} strokeWidth={2} className="animate-spin" />}
+            {busy ? 'Verifying…' : 'Connect'}
+          </button>
+        </div>
+      )}
+
+      {account.connected && (
+        <div className="mt-4 flex items-center gap-3">
+          {error && <p className="flex-1 font-mono text-[11px] text-red-400">{error}</p>}
+          <button onClick={disconnect} disabled={busy}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm text-muted transition hover:border-red-500/40 hover:text-red-400 disabled:opacity-40">
+            {busy ? <Loader2 size={14} strokeWidth={2} className="animate-spin" /> : <X size={14} strokeWidth={2} />}
+            Disconnect
+          </button>
+        </div>
+      )}
+    </section>
+  )
+}

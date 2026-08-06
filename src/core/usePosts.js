@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 
-const API = 'http://localhost:8000'
+import { API } from './api.js'
 const POLL_MS = 3000
 
 export function usePosts() {
