@@ -1,4 +1,3 @@
-import { Pencil, Trash2 } from 'lucide-react'
 import StatusPill from './StatusPill.jsx'
 import { STATUS, PLATFORMS } from '../core/types.js'
 import { Pencil, Trash2, Repeat } from 'lucide-react'
