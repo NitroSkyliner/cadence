@@ -22,6 +22,7 @@ class Post(BaseModel):
     status: str
     results: dict[str, PublishResult] = Field(default_factory=dict)
     metrics: dict[str, PlatformMetrics] = Field(default_factory=dict)
+    repeat: str = "none"          # none | daily | weekly | monthly
     createdAt: int
 
 
@@ -32,3 +33,4 @@ class PostPatch(BaseModel):
     status: Optional[str] = None
     results: Optional[dict[str, PublishResult]] = None
     metrics: Optional[dict[str, PlatformMetrics]] = None
+    repeat: Optional[str] = None

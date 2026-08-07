@@ -1,6 +1,9 @@
 import asyncio
+import time
+import calendar
+import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +18,7 @@ from db import (
     get_credentials, set_credentials, delete_credentials,
 )
 POLL_SECONDS = 3
-
+METRICS_REFRESH_SECONDS = 300
 
 def _parse_iso(s: str) -> datetime:
     if s.endswith("Z"):
@@ -25,6 +28,28 @@ def _parse_iso(s: str) -> datetime:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt
 
+def _add_months(dt: datetime, months: int) -> datetime:
+    m = dt.month - 1 + months
+    year = dt.year + m // 12
+    month = m % 12 + 1
+    day = min(dt.day, calendar.monthrange(year, month)[1])   # clamp e.g. Jan 31 -> Feb 28
+    return dt.replace(year=year, month=month, day=day)
+
+
+def _next_occurrence(iso: str, repeat: str, now: datetime) -> datetime | None:
+    dt = _parse_iso(iso)
+    if repeat == "daily":
+        step = lambda d: d + timedelta(days=1)
+    elif repeat == "weekly":
+        step = lambda d: d + timedelta(days=7)
+    elif repeat == "monthly":
+        step = lambda d: _add_months(d, 1)
+    else:
+        return None
+    nxt = step(dt)
+    while nxt <= now:            # collapse missed windows: exactly one make-up, next in future
+        nxt = step(nxt)
+    return nxt
 
 async def _publish(post: dict):
     patch_post(post["id"], {"status": "publishing"})
@@ -40,6 +65,22 @@ async def _publish(post: dict):
         "results": results,
     })
 
+    # Recurring: spawn the next occurrence regardless of outcome (a transient
+    # failure shouldn't break the chain). The successor is always in the future.
+    repeat = post.get("repeat", "none")
+    if repeat and repeat != "none":
+        now = datetime.now(timezone.utc)
+        nxt = _next_occurrence(post["scheduledAt"], repeat, now)
+        if nxt:
+            upsert_post(Post(
+                id=f"post_{uuid.uuid4().hex}",
+                text=post["text"],
+                platforms=post["platforms"],
+                scheduledAt=nxt.isoformat(),
+                status="scheduled",
+                repeat=repeat,
+                createdAt=int(now.timestamp() * 1000),
+            ))
 
 async def _publish_due():
     now = datetime.now(timezone.utc)
@@ -47,15 +88,40 @@ async def _publish_due():
         if post["status"] == "scheduled" and _parse_iso(post["scheduledAt"]) <= now:
             await _publish(post)
 
+async def _refresh_all_metrics(since_days: int = 14):
+    cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
+    for post in list_posts():
+        if post["status"] != "published":
+            continue
+        if _parse_iso(post["scheduledAt"]) < cutoff:
+            continue          # engagement on old posts has settled; skip to bound API calls
+        metrics = {}
+        for platform_id, result in post["results"].items():
+            if result.get("ok") and result.get("ref"):
+                try:
+                    metrics[platform_id] = await get_adapter(platform_id).fetch_metrics(result["ref"])
+                except Exception as e:
+                    print(f"[metrics] {post['id']} {platform_id}: {e}")
+        if metrics:
+            patch_post(post["id"], {"metrics": metrics})
 
 async def _worker():
+    last_metrics = 0.0
     while True:
         try:
             await _publish_due()
         except Exception as e:
             print(f"[worker] error: {e}")
-        await asyncio.sleep(POLL_SECONDS)
 
+        now = time.monotonic()
+        if now - last_metrics >= METRICS_REFRESH_SECONDS:
+            last_metrics = now                      # 0.0 start => also runs once right after boot
+            try:
+                await _refresh_all_metrics()
+            except Exception as e:
+                print(f"[worker] metrics error: {e}")
+
+        await asyncio.sleep(POLL_SECONDS)
 
 def _seed_from_env():
     # One-time: import .env Bluesky creds into the DB if nothing's stored yet.
@@ -119,20 +185,8 @@ def remove_post(post_id: str) -> dict:
 # ---- metrics ----
 @app.post("/metrics/refresh")
 async def refresh_metrics() -> list[dict]:
-    for post in list_posts():
-        if post["status"] != "published":
-            continue
-        metrics = {}
-        for platform_id, result in post["results"].items():
-            if result.get("ok") and result.get("ref"):
-                try:
-                    metrics[platform_id] = await get_adapter(platform_id).fetch_metrics(result["ref"])
-                except Exception as e:
-                    print(f"[metrics] {post['id']} {platform_id}: {e}")
-        if metrics:
-            patch_post(post["id"], {"metrics": metrics})
+    await _refresh_all_metrics()
     return list_posts()
-
 
 REQUIRED_FIELDS = {
     "bluesky":  ["handle", "app_password"],

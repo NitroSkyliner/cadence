@@ -1,6 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react'
 import StatusPill from './StatusPill.jsx'
 import { STATUS, PLATFORMS } from '../core/types.js'
+import { Pencil, Trash2, Repeat } from 'lucide-react'
 
 const EDITABLE = new Set([STATUS.DRAFT, STATUS.SCHEDULED, STATUS.FAILED])
 
@@ -36,6 +37,11 @@ export default function Queue({ posts, onEdit, onDelete }) {
                   </span>
                 ))}
               </span>
+              {post.repeat && post.repeat !== 'none' && (
+                <span title={`Repeats ${post.repeat}`} className="shrink-0 text-muted">
+                  <Repeat size={13} strokeWidth={1.75} />
+                </span>
+              )}
               <StatusPill status={post.status} />
               <span className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
                 {EDITABLE.has(post.status) && (

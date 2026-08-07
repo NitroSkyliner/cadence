@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Send, FileText, X } from 'lucide-react'
-import { allPlatforms, createPost, STATUS } from '../core/types.js'
+import { allPlatforms, createPost, STATUS, REPEAT } from '../core/types.js'
 
 function nowLocalInput() {
   const d = new Date()
@@ -19,18 +19,18 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   const [text, setText] = useState('')
   const [selected, setSelected] = useState({})
   const [when, setWhen] = useState(nowLocalInput())
+  const [repeat, setRepeat] = useState(REPEAT.NONE)
 
   const isEditing = Boolean(editing)
 
-  // Re-sync only when the *identity* of the edited post changes (editing?.id),
-  // NOT on every poll — otherwise background refreshes would clobber your typing.
   useEffect(() => {
     if (editing) {
       setText(editing.text)
       setSelected(Object.fromEntries(editing.platforms.map((id) => [id, true])))
       setWhen(isoToLocalInput(editing.scheduledAt))
+      setRepeat(editing.repeat || REPEAT.NONE)
     } else {
-      setText(''); setSelected({}); setWhen(nowLocalInput())
+      setText(''); setSelected({}); setWhen(nowLocalInput()); setRepeat(REPEAT.NONE)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing?.id])
@@ -44,12 +44,13 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   const canDraft = hasContent && !over
 
   const toggle = (id) => setSelected((s) => ({ ...s, [id]: !s[id] }))
-  const reset = () => { setText(''); setSelected({}); setWhen(nowLocalInput()) }
+  const reset = () => { setText(''); setSelected({}); setWhen(nowLocalInput()); setRepeat(REPEAT.NONE) }
 
   const payload = () => ({
     text: text.trim(),
     platforms: chosen.map((p) => p.id),
     scheduledAt: new Date(when).toISOString(),
+    repeat,
   })
 
   const schedule = () => {
@@ -96,11 +97,18 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
         ))}
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3">
+      <div className="mt-4 flex items-center gap-3">
         <input type="datetime-local" value={when}
           onChange={(e) => setWhen(e.target.value)}
           className="rounded-lg border border-line bg-elevated px-3 py-2 font-mono text-xs text-fg outline-none transition focus:border-coral [color-scheme:dark]" />
-        <span className={`font-mono text-xs ${over ? 'text-red-400' : 'text-muted'}`}>
+        <select value={repeat} onChange={(e) => setRepeat(e.target.value)}
+          className="rounded-lg border border-line bg-elevated px-2 py-2 font-mono text-xs text-fg outline-none transition focus:border-coral [color-scheme:dark]">
+          <option value="none">Once</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+        <span className={`ml-auto font-mono text-xs ${over ? 'text-red-400' : 'text-muted'}`}>
           {text.length}{limit != null ? ` / ${limit}` : ''}
         </span>
       </div>

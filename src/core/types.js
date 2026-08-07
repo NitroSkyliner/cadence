@@ -6,6 +6,10 @@ export const STATUS = {
   PUBLISHED: 'published', FAILED: 'failed',
 }
 
+export const REPEAT = {
+  NONE: 'none', DAILY: 'daily', WEEKLY: 'weekly', MONTHLY: 'monthly',
+}
+
 export const PLATFORMS = {
   bluesky:   { id: 'bluesky',   label: 'Bluesky',   short: 'BS', maxLen: 300 },
   mastodon:  { id: 'mastodon',  label: 'Mastodon',  short: 'MA', maxLen: 500 },
@@ -15,11 +19,11 @@ export const PLATFORMS = {
 }
 
 let counter = 0
-export function createPost({ text, platforms, scheduledAt, status = STATUS.SCHEDULED }) {
+export function createPost({ text, platforms, scheduledAt, status = STATUS.SCHEDULED, repeat = REPEAT.NONE }) {
   return {
     id: `post_${Date.now()}_${counter++}`,
     text, platforms, scheduledAt,
-    status, results: {}, metrics: {}, createdAt: Date.now(),
+    status, results: {}, metrics: {}, repeat, createdAt: Date.now(),
   }
 }
 

@@ -47,13 +47,16 @@ export default function Insights({ posts, onRefresh }) {
       <div className="grid gap-6 md:grid-cols-2">
         <section className="rounded-xl border border-line bg-surface p-6">
           <div className="mb-6 flex items-center justify-between">
-            <h2 className="text-base font-medium tracking-tight">This week</h2>
-            <span className={`rounded-full border px-2 py-0.5 font-mono text-[11px] ${
-              onTrack ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-                      : 'border-amber-500/40 bg-amber-500/10 text-amber-400'}`}>
-              {onTrack ? 'On track' : 'Needs attention'}
-            </span>
+          <h2 className="text-base font-medium tracking-tight">Engagement</h2>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] tracking-wider text-muted/60">AUTO · 5M</span>
+            <button onClick={refresh} disabled={refreshing}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 font-mono text-[11px] text-muted transition hover:border-coral/40 hover:text-fg disabled:opacity-40">
+              <RefreshCw size={13} strokeWidth={1.75} className={refreshing ? 'animate-spin' : ''} />
+              {refreshing ? 'SYNCING' : 'REFRESH'}
+            </button>
           </div>
+        </div>
           <div className="flex gap-10">
             {statusStats.map((s) => (
               <div key={s.label}>

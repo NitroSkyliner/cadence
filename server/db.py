@@ -8,6 +8,9 @@ from models import Post
 
 DB_PATH = Path(__file__).parent / "cadence.db"
 
+_JSON_COLS = {"platforms", "results", "metrics"}
+_MUTABLE = {"text", "platforms", "scheduledAt", "status", "results", "metrics", "repeat"}
+
 
 @contextmanager
 def _conn():
@@ -31,18 +34,19 @@ def init_db():
                 status      TEXT NOT NULL,
                 results     TEXT NOT NULL,
                 metrics     TEXT NOT NULL DEFAULT '{}',
+                repeat      TEXT NOT NULL DEFAULT 'none',
                 createdAt   INTEGER NOT NULL
             )
         """)
-        # Migration for DBs created before the metrics column existed.
         cols = {r["name"] for r in c.execute("PRAGMA table_info(posts)").fetchall()}
         if "metrics" not in cols:
             c.execute("ALTER TABLE posts ADD COLUMN metrics TEXT NOT NULL DEFAULT '{}'")
-
+        if "repeat" not in cols:
+            c.execute("ALTER TABLE posts ADD COLUMN repeat TEXT NOT NULL DEFAULT 'none'")
         c.execute("""
             CREATE TABLE IF NOT EXISTS credentials (
                 platform     TEXT PRIMARY KEY,
-                data         TEXT NOT NULL,   -- JSON blob (handle, secret, etc.)
+                data         TEXT NOT NULL,
                 connected_at INTEGER NOT NULL
             )
         """)
@@ -57,6 +61,7 @@ def _row_to_post(row) -> dict:
         "status": row["status"],
         "results": json.loads(row["results"]),
         "metrics": json.loads(row["metrics"]),
+        "repeat": row["repeat"],
         "createdAt": row["createdAt"],
     }
 
@@ -77,8 +82,8 @@ def upsert_post(post: Post) -> dict:
     with _conn() as c:
         c.execute(
             """INSERT OR REPLACE INTO posts
-               (id, text, platforms, scheduledAt, status, results, metrics, createdAt)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, text, platforms, scheduledAt, status, results, metrics, repeat, createdAt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 post.id,
                 post.text,
@@ -87,13 +92,11 @@ def upsert_post(post: Post) -> dict:
                 post.status,
                 json.dumps({k: v.model_dump() for k, v in post.results.items()}),
                 json.dumps({k: v.model_dump() for k, v in post.metrics.items()}),
+                post.repeat,
                 post.createdAt,
             ),
         )
     return post.model_dump()
-
-_JSON_COLS = {"platforms", "results", "metrics"}
-_MUTABLE = {"text", "platforms", "scheduledAt", "status", "results", "metrics"}
 
 
 def patch_post(post_id: str, changes: dict) -> dict | None:
@@ -113,6 +116,12 @@ def patch_post(post_id: str, changes: dict) -> dict | None:
         c.execute(f"UPDATE posts SET {', '.join(sets)} WHERE id = ?", values)
     return existing
 
+
+def delete_post(post_id: str):
+    with _conn() as c:
+        c.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+
+
 def get_credentials(platform: str) -> dict | None:
     with _conn() as c:
         row = c.execute("SELECT data FROM credentials WHERE platform = ?", (platform,)).fetchone()
@@ -130,8 +139,3 @@ def set_credentials(platform: str, data: dict):
 def delete_credentials(platform: str):
     with _conn() as c:
         c.execute("DELETE FROM credentials WHERE platform = ?", (platform,))
-
-
-def delete_post(post_id: str):
-    with _conn() as c:
-        c.execute("DELETE FROM posts WHERE id = ?", (post_id,))
