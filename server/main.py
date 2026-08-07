@@ -5,7 +5,8 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from models import Post, PostPatch
@@ -15,7 +16,7 @@ from adapters.registry import (
 )
 from db import (
     init_db, list_posts, upsert_post, patch_post, get_post, delete_post,
-    get_credentials, set_credentials, delete_credentials,
+    get_credentials, set_credentials, delete_credentials, MEDIA_DIR, add_media, get_media
 )
 POLL_SECONDS = 3
 METRICS_REFRESH_SECONDS = 300
@@ -193,6 +194,25 @@ REQUIRED_FIELDS = {
     "mastodon": ["instance_url", "access_token"],
 }
 
+
+# ---- media ----
+@app.post("/media")
+async def upload_media(file: UploadFile = File(...)) -> dict:
+    media_id = f"media_{uuid.uuid4().hex}"
+    data = await file.read()
+    (MEDIA_DIR / media_id).write_bytes(data)
+    add_media(media_id, file.content_type or "application/octet-stream",
+              file.filename or media_id, len(data))
+    return {"id": media_id, "url": f"/media/{media_id}", "content_type": file.content_type}
+
+
+@app.get("/media/{media_id}")
+def serve_media(media_id: str):
+    meta = get_media(media_id)
+    path = MEDIA_DIR / media_id
+    if meta is None or not path.exists():
+        raise HTTPException(404, "Media not found")
+    return FileResponse(path, media_type=meta["content_type"], filename=meta["filename"])
 
 # ---- accounts ----
 @app.get("/accounts")

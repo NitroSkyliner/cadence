@@ -6,10 +6,13 @@ from contextlib import contextmanager
 
 from models import Post
 
-DB_PATH = Path(__file__).parent / "cadence.db"
+BASE = Path(__file__).parent
+DB_PATH = BASE / "cadence.db"
+MEDIA_DIR = BASE / "media"
+MEDIA_DIR.mkdir(exist_ok=True)
 
-_JSON_COLS = {"platforms", "results", "metrics"}
-_MUTABLE = {"text", "platforms", "scheduledAt", "status", "results", "metrics", "repeat"}
+_JSON_COLS = {"platforms", "results", "metrics", "media"}
+_MUTABLE = {"text", "platforms", "scheduledAt", "status", "results", "metrics", "repeat", "media"}
 
 
 @contextmanager
@@ -35,6 +38,7 @@ def init_db():
                 results     TEXT NOT NULL,
                 metrics     TEXT NOT NULL DEFAULT '{}',
                 repeat      TEXT NOT NULL DEFAULT 'none',
+                media       TEXT NOT NULL DEFAULT '[]',
                 createdAt   INTEGER NOT NULL
             )
         """)
@@ -43,11 +47,22 @@ def init_db():
             c.execute("ALTER TABLE posts ADD COLUMN metrics TEXT NOT NULL DEFAULT '{}'")
         if "repeat" not in cols:
             c.execute("ALTER TABLE posts ADD COLUMN repeat TEXT NOT NULL DEFAULT 'none'")
+        if "media" not in cols:
+            c.execute("ALTER TABLE posts ADD COLUMN media TEXT NOT NULL DEFAULT '[]'")
         c.execute("""
             CREATE TABLE IF NOT EXISTS credentials (
                 platform     TEXT PRIMARY KEY,
                 data         TEXT NOT NULL,
                 connected_at INTEGER NOT NULL
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS media (
+                id           TEXT PRIMARY KEY,
+                content_type TEXT NOT NULL,
+                filename     TEXT NOT NULL,
+                size         INTEGER NOT NULL,
+                created_at   INTEGER NOT NULL
             )
         """)
 
@@ -62,6 +77,7 @@ def _row_to_post(row) -> dict:
         "results": json.loads(row["results"]),
         "metrics": json.loads(row["metrics"]),
         "repeat": row["repeat"],
+        "media": json.loads(row["media"]),
         "createdAt": row["createdAt"],
     }
 
@@ -82,8 +98,8 @@ def upsert_post(post: Post) -> dict:
     with _conn() as c:
         c.execute(
             """INSERT OR REPLACE INTO posts
-               (id, text, platforms, scheduledAt, status, results, metrics, repeat, createdAt)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, text, platforms, scheduledAt, status, results, metrics, repeat, media, createdAt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 post.id,
                 post.text,
@@ -93,6 +109,7 @@ def upsert_post(post: Post) -> dict:
                 json.dumps({k: v.model_dump() for k, v in post.results.items()}),
                 json.dumps({k: v.model_dump() for k, v in post.metrics.items()}),
                 post.repeat,
+                json.dumps(post.media),
                 post.createdAt,
             ),
         )
@@ -139,3 +156,17 @@ def set_credentials(platform: str, data: dict):
 def delete_credentials(platform: str):
     with _conn() as c:
         c.execute("DELETE FROM credentials WHERE platform = ?", (platform,))
+
+
+def add_media(media_id: str, content_type: str, filename: str, size: int):
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO media (id, content_type, filename, size, created_at) VALUES (?, ?, ?, ?, ?)",
+            (media_id, content_type, filename, size, int(time.time() * 1000)),
+        )
+
+
+def get_media(media_id: str) -> dict | None:
+    with _conn() as c:
+        row = c.execute("SELECT * FROM media WHERE id = ?", (media_id,)).fetchone()
+    return dict(row) if row else None

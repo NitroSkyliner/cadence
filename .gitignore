@@ -28,3 +28,5 @@ server/.venv/
 server/__pycache__/
 server/cadence.db
 server/.env
+
+server/media/
