@@ -1,9 +1,3 @@
-# from atproto import AsyncClient
-
-# from .base import Adapter
-# from db import load_media_bytes
-# from db import read_media
-
 import time
 import asyncio
 import httpx
@@ -28,38 +22,31 @@ class BlueskyAdapter(Adapter):
         return self._client
 
     async def publish(self, post: dict) -> dict:
-        try:
-            client = await self._get_client()
+            try:
+                client = await self._get_client()
 
-            images, alts = [], []
-            for mid in post.get("media", [])[:4]:      # Bluesky allows up to 4
-                loaded = load_media_bytes(mid)
-                if loaded:
-                    images.append(loaded[0])
-                    alts.append("")                    # alt text: wired in a later pass
+                medias = [m for m in (read_media(mid) for mid in post.get("media", [])) if m]
+                videos = [m for m in medias if m["is_video"]]
 
-            medias = [m for m in (read_media(mid) for mid in post.get("media", [])) if m]
-            videos = [m for m in medias if m["is_video"]]
-
-            if videos:
-                embed = await self._video_embed(client, videos[0])     # 1 video per post
-                response = await client.send_post(text=post["text"], embed=embed)
-            else:
-                images = medias[:4]
-                if images:
-                    response = await client.send_images(
-                        text=post["text"],
-                        images=[m["bytes"] for m in images],
-                        image_alts=[m["alt"] for m in images],
-                    )
+                if videos:
+                    embed = await self._video_embed(client, videos[0])     # 1 video per post
+                    response = await client.send_post(text=post["text"], embed=embed)
                 else:
-                    response = await client.send_post(text=post["text"])
+                    images = medias[:4]
+                    if images:
+                        response = await client.send_images(
+                            text=post["text"],
+                            images=[m["bytes"] for m in images],
+                            image_alts=[m["alt"] for m in images],
+                        )
+                    else:
+                        response = await client.send_post(text=post["text"])
 
-            return {"ok": True, "ref": response.uri}
-        
-        except Exception as e:
-            self._client = None
-            return {"ok": False, "error": str(e)}
+                return {"ok": True, "ref": response.uri}
+
+            except Exception as e:
+                self._client = None
+                return {"ok": False, "error": str(e)}
 
     async def _video_embed(self, client, media):
         did = client.me.did
