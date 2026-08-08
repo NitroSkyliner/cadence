@@ -146,7 +146,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
       )}
 
       {videoToBluesky && (
-        <p className="mt-2 font-mono text-[11px] text-amber-400">Note: Bluesky doesn't support video yet — that account will fail; Mastodon will post it.</p>
+        <p className="mt-2 font-mono text-[11px] text-muted">Bluesky video needs a verified-email account and has daily limits; processing may take a moment before it publishes.</p>
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">

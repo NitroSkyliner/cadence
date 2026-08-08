@@ -1,8 +1,17 @@
-from atproto import AsyncClient
+# from atproto import AsyncClient
+
+# from .base import Adapter
+# from db import load_media_bytes
+# from db import read_media
+
+import time
+import asyncio
+import httpx
+from atproto import AsyncClient, models
 
 from .base import Adapter
-from db import load_media_bytes
 from db import read_media
+
 
 class BlueskyAdapter(Adapter):
     def __init__(self, handle: str, app_password: str):
@@ -30,25 +39,76 @@ class BlueskyAdapter(Adapter):
                     alts.append("")                    # alt text: wired in a later pass
 
             medias = [m for m in (read_media(mid) for mid in post.get("media", [])) if m]
-            if any(m["is_video"] for m in medias):
-                return {"ok": False,
-                        "error": "Bluesky video isn't supported yet (needs the video service + a verified email)"}
+            videos = [m for m in medias if m["is_video"]]
 
-            images = medias[:4]                          # Bluesky allows up to 4 images
-            if images:
-                response = await client.send_images(
-                    text=post["text"],
-                    images=[m["bytes"] for m in images],
-                    image_alts=[m["alt"] for m in images],   # real alt text now
-                )
+            if videos:
+                embed = await self._video_embed(client, videos[0])     # 1 video per post
+                response = await client.send_post(text=post["text"], embed=embed)
             else:
-                response = await client.send_post(text=post["text"])
+                images = medias[:4]
+                if images:
+                    response = await client.send_images(
+                        text=post["text"],
+                        images=[m["bytes"] for m in images],
+                        image_alts=[m["alt"] for m in images],
+                    )
+                else:
+                    response = await client.send_post(text=post["text"])
 
             return {"ok": True, "ref": response.uri}
+        
         except Exception as e:
             self._client = None
             return {"ok": False, "error": str(e)}
 
+    async def _video_embed(self, client, media):
+        did = client.me.did
+
+        # The service-auth token's audience must be the account's PDS.
+        # ⚠️ MOST LIKELY LINE TO NEED A TWEAK: if the video host returns an auth
+        # error, adjust how pds_host is derived (or hardcode your PDS host).
+        pds_host = httpx.URL(str(client._base_url)).host
+
+        auth = await client.com.atproto.server.get_service_auth(
+            models.ComAtprotoServerGetServiceAuth.Params(
+                aud=f"did:web:{pds_host}",
+                lxm="com.atproto.repo.uploadBlob",
+                exp=int(time.time()) + 30 * 60,          # 30-min token
+            )
+        )
+
+        # uploadVideo must go directly to the video service (no PDS proxy).
+        async with httpx.AsyncClient(timeout=180) as http:
+            up = await http.post(
+                "https://video.bsky.app/xrpc/app.bsky.video.uploadVideo",
+                params={"did": did, "name": f"{int(time.time() * 1000)}.mp4"},
+                headers={
+                    "Authorization": f"Bearer {auth.token}",
+                    "Content-Type": media["content_type"] or "video/mp4",
+                },
+                content=media["bytes"],
+            )
+            up.raise_for_status()
+            job_id = up.json().get("jobId")
+
+        # Poll processing (this call CAN go through the PDS) until the blob is ready.
+        blob = None
+        for _ in range(60):                              # ~2 min ceiling
+            await asyncio.sleep(2)
+            status = await client.app.bsky.video.get_job_status(
+                models.AppBskyVideoGetJobStatus.Params(job_id=job_id)
+            )
+            js = status.job_status
+            if js.state == "JOB_STATE_FAILED":
+                raise Exception(js.error or "video processing failed")
+            if js.blob:
+                blob = js.blob
+                break
+        if blob is None:
+            raise Exception("video processing timed out")
+
+        return models.AppBskyEmbedVideo.Main(video=blob, alt=media["alt"] or None)
+    
     async def fetch_metrics(self, ref: str) -> dict:
         try:
             client = await self._get_client()
