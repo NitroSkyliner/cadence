@@ -17,8 +17,11 @@ from adapters.registry import (
 )
 from db import (
     init_db, list_posts, upsert_post, patch_post, get_post, delete_post,
-    get_credentials, set_credentials, delete_credentials, MEDIA_DIR, add_media, get_media
+    list_connections, get_connection, set_connection, delete_connection, resolve_target,
+    MEDIA_DIR, add_media, get_media,
 )
+from oauth import is_oauth, new_state, consume_state, build_authorize_url, exchange_code
+
 POLL_SECONDS = 3
 METRICS_REFRESH_SECONDS = 300
 
@@ -63,35 +66,22 @@ def _next_occurrence(iso: str, repeat: str, now: datetime) -> datetime | None:
     return nxt
 
 async def _publish(post: dict):
+    from oauth import is_oauth, refresh_if_needed
     patch_post(post["id"], {"status": "publishing"})
     results = {}
-    for platform_id in post["platforms"]:
+    for target in post["platforms"]:
+        conn = resolve_target(target)
+        if conn is None:
+            results[target] = {"ok": False, "error": "account not connected"}
+            continue
+        if is_oauth(conn["platform"]):
+            await refresh_if_needed(conn["id"])           # keep token fresh before posting
         try:
-            results[platform_id] = await get_adapter(platform_id).publish(post)
+            results[target] = await get_adapter(target).publish(post)
         except Exception as e:
-            results[platform_id] = {"ok": False, "error": str(e)}
+            results[target] = {"ok": False, "error": str(e)}
     all_ok = all(r.get("ok") for r in results.values())
-    patch_post(post["id"], {
-        "status": "published" if all_ok else "failed",
-        "results": results,
-    })
-
-    # Recurring: spawn the next occurrence regardless of outcome (a transient
-    # failure shouldn't break the chain). The successor is always in the future.
-    repeat = post.get("repeat", "none")
-    if repeat and repeat != "none":
-        now = datetime.now(timezone.utc)
-        nxt = _next_occurrence(post["scheduledAt"], repeat, now)
-        if nxt:
-            upsert_post(Post(
-                id=f"post_{uuid.uuid4().hex}",
-                text=post["text"],
-                platforms=post["platforms"],
-                scheduledAt=nxt.isoformat(),
-                status="scheduled",
-                repeat=repeat,
-                createdAt=int(now.timestamp() * 1000),
-            ))
+    patch_post(post["id"], {"status": "published" if all_ok else "failed", "results": results})
 
 async def _publish_due():
     now = datetime.now(timezone.utc)
@@ -107,12 +97,12 @@ async def _refresh_all_metrics(since_days: int = 14):
         if _parse_iso(post["scheduledAt"]) < cutoff:
             continue          # engagement on old posts has settled; skip to bound API calls
         metrics = {}
-        for platform_id, result in post["results"].items():
+        for target, result in post["results"].items():
             if result.get("ok") and result.get("ref"):
                 try:
-                    metrics[platform_id] = await get_adapter(platform_id).fetch_metrics(result["ref"])
+                    metrics[target] = await get_adapter(target).fetch_metrics(result["ref"])
                 except Exception as e:
-                    print(f"[metrics] {post['id']} {platform_id}: {e}")
+                    print(f"[metrics] {post['id']} {target}: {e}")
         if metrics:
             patch_post(post["id"], {"metrics": metrics})
 
@@ -225,55 +215,77 @@ def serve_media(media_id: str):
     return FileResponse(path, media_type=meta["content_type"], filename=meta["filename"])
 
 # ---- accounts ----
+REQUIRED_FIELDS = {
+    "bluesky":  ["handle", "app_password"],
+    "mastodon": ["instance_url", "access_token"],
+}
+
+
 @app.get("/accounts")
 def get_accounts() -> list[dict]:
     out = []
     for pid in PLATFORM_IDS:
-        creds = get_credentials(pid)
-        oauth = is_oauth(pid)
+        conns = list_connections(pid)
         out.append({
             "id": pid,
-            "oauth": oauth,
-            "supported": is_supported(pid) or oauth,
-            "connected": bool(creds),
-            "live": is_live(pid),                         # real adapter posting
-            "account": creds.get("handle") if creds else None,
+            "oauth": is_oauth(pid),
+            "supported": is_supported(pid) or is_oauth(pid),
+            "connections": [{"id": c["id"], "handle": c["handle"]} for c in conns],
         })
     return out
+
 
 @app.post("/accounts/{platform}")
 async def connect_account(platform: str, creds: dict) -> dict:
     if platform not in PLATFORM_IDS:
         raise HTTPException(404, "Unknown platform")
     if not is_supported(platform):
-        raise HTTPException(400, f"{platform} isn't supported for real posting yet")
-
+        raise HTTPException(400, f"{platform} isn't supported for token connect")
     data = {}
     for field in REQUIRED_FIELDS.get(platform, []):
         val = (creds.get(field) or "").strip()
         if not val:
             raise HTTPException(422, f"{field} is required")
         data[field] = val
-
     try:
-        resolved = await make_real_adapter(platform, data).verify()   # logs in / validates
+        resolved = await make_real_adapter(platform, data).verify()
     except Exception as e:
         raise HTTPException(400, f"Could not connect: {e}")
-
-    if resolved:
-        data["handle"] = resolved
-
-    set_credentials(platform, data)
-    invalidate(platform)
-    return {"id": platform, "supported": True, "connected": True, "account": data.get("handle")}
+    handle = resolved or data.get("handle") or platform
+    data["handle"] = handle
+    cid = set_connection(platform, handle, data)
+    invalidate(cid)
+    return {"id": cid, "handle": handle}
 
 
-@app.delete("/accounts/{platform}")
-def disconnect_account(platform: str) -> dict:
-    delete_credentials(platform)
-    invalidate(platform)
-    return {"id": platform, "supported": is_supported(platform), "connected": False, "account": None}
+@app.delete("/accounts/{platform}/{handle}")
+def disconnect_account(platform: str, handle: str) -> dict:
+    from db import make_conn_id
+    cid = make_conn_id(platform, handle)
+    delete_connection(cid)
+    invalidate(cid)
+    return {"ok": True, "id": cid}
 
+
+@app.get("/accounts/{platform}/oauth/start")
+def oauth_start(platform: str):
+    if not is_oauth(platform):
+        raise HTTPException(400, f"{platform} does not use OAuth")
+    return RedirectResponse(build_authorize_url(platform, new_state(platform)))
+
+
+@app.get("/accounts/{platform}/oauth/callback", response_class=HTMLResponse)
+async def oauth_callback(platform: str, code: str = "", state: str = "", error: str = ""):
+    if error:
+        return _popup_close_html(f"Cancelled: {error}")
+    if consume_state(state) != platform:
+        return _popup_close_html("Invalid or expired state")
+    try:
+        cid = await exchange_code(platform, code)
+    except Exception as e:
+        return _popup_close_html(f"Token exchange failed: {e}")
+    invalidate(cid)
+    return _popup_close_html(None)
 
 
 # ---- OAuth connect ----

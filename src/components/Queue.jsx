@@ -10,6 +10,11 @@ function fmtTime(iso) {
   return `${day} ${time}`
 }
 
+const short = (t) => {
+  const platform = t.includes(':') ? t.split(':')[0] : t
+  return PLATFORMS[platform]?.short ?? platform
+}
+
 export default function Queue({ posts, onEdit, onDelete }) {
   const sorted = [...posts].sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt))
 
@@ -31,7 +36,7 @@ export default function Queue({ posts, onEdit, onDelete }) {
               <span className="flex shrink-0 gap-1">
                 {post.platforms.map((id) => (
                   <span key={id} className="rounded bg-ink px-1.5 py-0.5 font-mono text-[10px] text-muted">
-                    {PLATFORMS[id]?.short ?? id}
+                    {PLATFORMS[id]?.short ?? idshort(id)}
                   </span>
                 ))}
               </span>

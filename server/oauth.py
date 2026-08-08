@@ -5,7 +5,8 @@ from urllib.parse import urlencode
 
 import httpx
 
-from db import get_credentials, set_credentials
+from db import list_connections, get_connection, set_connection
+
 
 REDIRECT_BASE = os.environ.get("OAUTH_REDIRECT_BASE", "http://localhost:8000")
 MOCK_BASE = f"{REDIRECT_BASE}/mock-oauth"
@@ -80,20 +81,19 @@ def build_authorize_url(platform: str, state: str) -> str:
     return f"{cfg['authorize_url']}?{urlencode(params)}"
 
 
-def _store_tokens(platform: str, tok: dict) -> dict:
+def _store_tokens(platform: str, tok: dict) -> str:
     expires_in = tok.get("expires_in")
+    handle = tok.get("handle") or tok.get("username") or f"{platform} account"
     data = {
         "access_token": tok.get("access_token"),
         "refresh_token": tok.get("refresh_token"),
         "expires_at": int((time.time() + expires_in) * 1000) if expires_in else None,
         "scope": tok.get("scope"),
-        "handle": tok.get("handle") or tok.get("username") or f"{platform} account",
+        "handle": handle,
     }
-    set_credentials(platform, data)
-    return data
+    return set_connection(platform, handle, data)         # returns connection id
 
-
-async def exchange_code(platform: str, code: str) -> dict:
+async def exchange_code(platform: str, code: str) -> str:
     cfg = _config(platform)
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post(cfg["token_url"], data={
@@ -105,27 +105,37 @@ async def exchange_code(platform: str, code: str) -> dict:
         return _store_tokens(platform, r.json())
 
 
-async def refresh_if_needed(platform: str) -> dict | None:
-    creds = get_credentials(platform)
-    if not creds:
+async def refresh_if_needed(conn_id: str) -> dict | None:
+    conn = get_connection(conn_id)
+    if not conn:
         return None
+    creds = conn["data"]
     exp = creds.get("expires_at")
-    if not exp or exp - int(time.time() * 1000) > 60_000:  # >60s of life left
-        return creds
+    if not exp or exp - int(time.time() * 1000) > 60_000:
+        return conn
     refresh = creds.get("refresh_token")
     if not refresh:
-        return creds
-    cfg = _config(platform)
+        return conn
+    cfg = _config(conn["platform"])
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post(cfg["token_url"], data={
             "grant_type": "refresh_token", "refresh_token": refresh,
             "client_id": cfg["client_id"], "client_secret": cfg["client_secret"],
         })
         r.raise_for_status()
-        return _store_tokens(platform, r.json())
+        set_connection(conn["platform"], creds["handle"], {**creds, **_token_fields(r.json())})
+    return get_connection(conn_id)
 
 
-async def valid_access_token(platform: str) -> str | None:
-    """What Phase-8 OAuth adapters will call to always get a fresh token."""
-    creds = await refresh_if_needed(platform)
-    return creds.get("access_token") if creds else None
+def _token_fields(tok: dict) -> dict:
+    expires_in = tok.get("expires_in")
+    return {
+        "access_token": tok.get("access_token"),
+        "refresh_token": tok.get("refresh_token", None),
+        "expires_at": int((time.time() + expires_in) * 1000) if expires_in else None,
+    }
+
+
+async def valid_access_token(conn_id: str) -> str | None:
+    conn = await refresh_if_needed(conn_id)
+    return conn["data"].get("access_token") if conn else None

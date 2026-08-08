@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Check, X, Loader2, ExternalLink } from 'lucide-react'
+import { Check, X, Loader2, ExternalLink, Plus } from 'lucide-react'
 import { API } from '../core/api.js'
 import { PLATFORMS } from '../core/types.js'
 
@@ -15,23 +15,18 @@ const CONNECT_FIELDS = {
 }
 
 export default function Accounts() {
-  const [accounts, setAccounts] = useState([])
+  const [platforms, setPlatforms] = useState([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     try {
       const res = await fetch(`${API}/accounts`)
-      setAccounts(await res.json())
-    } catch (err) {
-      console.error('Failed to load accounts:', err)
-    } finally {
-      setLoading(false)
-    }
+      setPlatforms(await res.json())
+    } catch (err) { console.error('Failed to load accounts:', err) }
+    finally { setLoading(false) }
   }, [])
 
   useEffect(() => { load() }, [load])
-
-  // Reload when an OAuth popup finishes.
   useEffect(() => {
     const onMsg = (e) => { if (e.data === 'cadence-oauth-done') load() }
     window.addEventListener('message', onMsg)
@@ -44,36 +39,38 @@ export default function Accounts() {
     <div className="mx-auto max-w-2xl">
       <p className="mb-4 font-mono text-xs tracking-wider text-muted">CONNECTED ACCOUNTS</p>
       <div className="flex flex-col gap-3">
-        {accounts.map((acc) => <AccountRow key={acc.id} account={acc} onChange={load} />)}
+        {platforms.map((p) => <PlatformRow key={p.id} platform={p} onChange={load} />)}
       </div>
       <p className="mt-6 text-xs leading-relaxed text-muted">
-        Credentials and tokens live on your local Cadence server, never in the browser. OAuth platforms
-        connect through a consent screen; until a platform's real app is registered, that flow runs on a
-        local mock provider so you can test the whole round-trip.
+        Connect multiple accounts per platform — each posts independently. Tokens live on your local
+        Cadence server, never in the browser. OAuth platforms run on a local mock provider until their
+        real app is registered.
       </p>
     </div>
   )
 }
 
-function AccountRow({ account, onChange }) {
-  const meta = PLATFORMS[account.id]
-  const fields = CONNECT_FIELDS[account.id] || []
+function PlatformRow({ platform, onChange }) {
+  const meta = PLATFORMS[platform.id]
+  const fields = CONNECT_FIELDS[platform.id] || []
+  const [adding, setAdding] = useState(false)
   const [values, setValues] = useState({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
-  const setField = (name, v) => setValues((s) => ({ ...s, [name]: v }))
+  const conns = platform.connections || []
+  const setField = (n, v) => setValues((s) => ({ ...s, [n]: v }))
   const allFilled = fields.every((f) => (values[f.name] || '').trim())
 
   const connectForm = async () => {
     setBusy(true); setError(null)
     try {
       const body = Object.fromEntries(fields.map((f) => [f.name, (values[f.name] || '').trim()]))
-      const res = await fetch(`${API}/accounts/${account.id}`, {
+      const res = await fetch(`${API}/accounts/${platform.id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Could not connect')
-      setValues({}); onChange()
+      setValues({}); setAdding(false); onChange()
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
 
@@ -81,58 +78,66 @@ function AccountRow({ account, onChange }) {
     const w = 520, h = 640
     const left = window.screenX + (window.outerWidth - w) / 2
     const top = window.screenY + (window.outerHeight - h) / 2
-    window.open(`${API}/accounts/${account.id}/oauth/start`, 'cadence-oauth',
+    window.open(`${API}/accounts/${platform.id}/oauth/start`, 'cadence-oauth',
       `width=${w},height=${h},left=${left},top=${top}`)
   }
 
-  const disconnect = async () => {
-    setBusy(true); setError(null)
+  const disconnect = async (handle) => {
+    setBusy(true)
     try {
-      await fetch(`${API}/accounts/${account.id}`, { method: 'DELETE' })
+      await fetch(`${API}/accounts/${platform.id}/${encodeURIComponent(handle)}`, { method: 'DELETE' })
       onChange()
-    } catch (err) { setError(err.message) } finally { setBusy(false) }
+    } finally { setBusy(false) }
   }
 
-  const badge = account.live
-    ? <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400"><Check size={12} strokeWidth={2} /> Live</span>
-    : account.connected
-    ? <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400">Connected</span>
-    : account.supported
-    ? <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-muted">Mock</span>
-    : <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-muted/50">Soon</span>
+  const canConnect = platform.oauth || platform.supported
 
   return (
     <section className="rounded-xl border border-line bg-surface p-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="grid h-9 w-9 place-items-center rounded-lg bg-elevated font-mono text-xs text-muted">
-            {meta?.short ?? account.id.slice(0, 2).toUpperCase()}
+            {meta?.short ?? platform.id.slice(0, 2).toUpperCase()}
           </span>
           <div>
-            <div className="text-sm font-medium text-fg">{meta?.label ?? account.id}</div>
+            <div className="text-sm font-medium text-fg">{meta?.label ?? platform.id}</div>
             <div className="font-mono text-[11px] text-muted">
-              {account.connected ? `Connected · ${account.account}`
-                : account.supported ? (account.oauth ? 'Connect via OAuth' : 'Not connected')
-                : 'Coming soon'}
+              {conns.length ? `${conns.length} connected` : canConnect ? 'Not connected' : 'Coming soon'}
             </div>
           </div>
         </div>
-        {badge}
+        {canConnect && (
+          platform.oauth
+            ? <button onClick={connectOAuth}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm text-muted transition hover:border-coral/40 hover:text-fg">
+                <ExternalLink size={14} strokeWidth={1.75} /> {conns.length ? 'Add another' : 'Connect'}
+              </button>
+            : <button onClick={() => setAdding((v) => !v)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm text-muted transition hover:border-coral/40 hover:text-fg">
+                <Plus size={14} strokeWidth={2} /> {conns.length ? 'Add another' : 'Connect'}
+              </button>
+        )}
       </div>
 
-      {/* OAuth connect */}
-      {account.oauth && !account.connected && (
-        <div className="mt-4">
-          <button onClick={connectOAuth}
-            className="inline-flex items-center gap-2 rounded-lg bg-coral px-4 py-2 text-sm font-medium text-white transition duration-100 hover:-translate-y-1">
-            <ExternalLink size={15} strokeWidth={2} /> Connect
-          </button>
+      {conns.length > 0 && (
+        <div className="mt-4 flex flex-col gap-2">
+          {conns.map((c) => (
+            <div key={c.id} className="flex items-center gap-3 rounded-lg border border-line bg-elevated px-3 py-2">
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400">
+                <Check size={12} strokeWidth={2} /> Live
+              </span>
+              <span className="flex-1 truncate font-mono text-xs text-fg">{c.handle}</span>
+              <button onClick={() => disconnect(c.handle)} disabled={busy}
+                className="grid h-7 w-7 place-items-center rounded-md text-muted transition hover:bg-ink hover:text-red-400 disabled:opacity-40">
+                <X size={14} strokeWidth={2} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* token-form connect */}
-      {!account.oauth && account.supported && !account.connected && (
-        <div className="mt-4 flex flex-col gap-2">
+      {adding && !platform.oauth && (
+        <div className="mt-3 flex flex-col gap-2">
           {fields.map((f) => (
             <input key={f.name} value={values[f.name] || ''} onChange={(e) => setField(f.name, e.target.value)}
               type={f.type} placeholder={f.placeholder}
@@ -143,17 +148,6 @@ function AccountRow({ account, onChange }) {
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-coral px-4 py-2 text-sm font-medium text-white transition duration-100 enabled:hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-40">
             {busy && <Loader2 size={15} strokeWidth={2} className="animate-spin" />}
             {busy ? 'Verifying…' : 'Connect'}
-          </button>
-        </div>
-      )}
-
-      {account.connected && (
-        <div className="mt-4 flex items-center gap-3">
-          {error && <p className="flex-1 font-mono text-[11px] text-red-400">{error}</p>}
-          <button onClick={disconnect} disabled={busy}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm text-muted transition hover:border-red-500/40 hover:text-red-400 disabled:opacity-40">
-            {busy ? <Loader2 size={14} strokeWidth={2} className="animate-spin" /> : <X size={14} strokeWidth={2} />}
-            Disconnect
           </button>
         </div>
       )}

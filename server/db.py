@@ -50,12 +50,28 @@ def init_db():
         if "media" not in cols:
             c.execute("ALTER TABLE posts ADD COLUMN media TEXT NOT NULL DEFAULT '[]'")
         c.execute("""
-            CREATE TABLE IF NOT EXISTS credentials (
-                platform     TEXT PRIMARY KEY,
-                data         TEXT NOT NULL,
+            CREATE TABLE IF NOT EXISTS connections (
+                id           TEXT PRIMARY KEY,   -- e.g. "bluesky:you.bsky.social"
+                platform     TEXT NOT NULL,
+                handle       TEXT NOT NULL,
+                data         TEXT NOT NULL,       -- JSON creds/tokens
                 connected_at INTEGER NOT NULL
             )
         """)
+        # Migrate any old single-account credentials into keyed connections.
+        old = c.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='credentials'"
+        ).fetchone()
+        if old:
+            for r in c.execute("SELECT platform, data, connected_at FROM credentials").fetchall():
+                data = json.loads(r["data"])
+                handle = data.get("handle") or r["platform"]
+                cid = f"{r['platform']}:{handle}"
+                c.execute(
+                    "INSERT OR IGNORE INTO connections (id, platform, handle, data, connected_at) VALUES (?, ?, ?, ?, ?)",
+                    (cid, r["platform"], handle, r["data"], r["connected_at"]),
+                )
+            c.execute("DROP TABLE credentials")
         c.execute("""
             CREATE TABLE IF NOT EXISTS media (
                 id           TEXT PRIMARY KEY,
@@ -139,23 +155,47 @@ def delete_post(post_id: str):
         c.execute("DELETE FROM posts WHERE id = ?", (post_id,))
 
 
-def get_credentials(platform: str) -> dict | None:
+def make_conn_id(platform: str, handle: str) -> str:
+    return f"{platform}:{handle}"
+
+
+def list_connections(platform: str | None = None) -> list[dict]:
+    q = "SELECT * FROM connections"
+    args = ()
+    if platform:
+        q += " WHERE platform = ?"
+        args = (platform,)
     with _conn() as c:
-        row = c.execute("SELECT data FROM credentials WHERE platform = ?", (platform,)).fetchone()
-    return json.loads(row["data"]) if row else None
+        rows = c.execute(q + " ORDER BY connected_at", args).fetchall()
+    return [{**dict(r), "data": json.loads(r["data"])} for r in rows]
 
 
-def set_credentials(platform: str, data: dict):
+def get_connection(conn_id: str) -> dict | None:
+    with _conn() as c:
+        row = c.execute("SELECT * FROM connections WHERE id = ?", (conn_id,)).fetchone()
+    return {**dict(row), "data": json.loads(row["data"])} if row else None
+
+
+def set_connection(platform: str, handle: str, data: dict) -> str:
+    cid = make_conn_id(platform, handle)
     with _conn() as c:
         c.execute(
-            "INSERT OR REPLACE INTO credentials (platform, data, connected_at) VALUES (?, ?, ?)",
-            (platform, json.dumps(data), int(time.time() * 1000)),
+            "INSERT OR REPLACE INTO connections (id, platform, handle, data, connected_at) VALUES (?, ?, ?, ?, ?)",
+            (cid, platform, handle, json.dumps(data), int(time.time() * 1000)),
         )
+    return cid
 
 
-def delete_credentials(platform: str):
+def delete_connection(conn_id: str):
     with _conn() as c:
-        c.execute("DELETE FROM credentials WHERE platform = ?", (platform,))
+        c.execute("DELETE FROM connections WHERE id = ?", (conn_id,))
+
+def resolve_target(target: str) -> dict | None:
+    """Accept a connection id OR a legacy bare platform id; return the connection."""
+    if ":" in target:
+        return get_connection(target)
+    conns = list_connections(target)          # legacy: first connection of that platform
+    return conns[0] if conns else None
 
 
 def add_media(media_id: str, content_type: str, filename: str, size: int):

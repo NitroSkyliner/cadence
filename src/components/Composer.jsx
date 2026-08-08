@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Send, FileText, X, ImagePlus, Loader2 } from 'lucide-react'
 import { allPlatforms, createPost, STATUS, REPEAT } from '../core/types.js'
 import { API } from '../core/api.js'
+import { createPost, STATUS, REPEAT, PLATFORMS } from '../core/types.js'
 
 function nowLocalInput() {
   const d = new Date()
@@ -25,7 +26,29 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef(null)
 
+
   const isEditing = Boolean(editing)
+
+  const [accounts, setAccounts] = useState([])   // [{ id, handle, platform, short, maxLen }]
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API}/accounts`)
+        const data = await res.json()
+        const flat = []
+        for (const p of data) {
+          for (const c of (p.connections || [])) {
+            flat.push({
+              id: c.id, handle: c.handle, platform: p.id,
+              short: PLATFORMS[p.id]?.short ?? p.id, maxLen: PLATFORMS[p.id]?.maxLen ?? 500
+            })
+          }
+        }
+        setAccounts(flat)
+      } catch (err) { console.error('Failed to load accounts:', err) }
+    })()
+  }, [])
 
   useEffect(() => {
     if (editing) {
@@ -41,8 +64,8 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   }, [editing?.id])
 
   const platforms = allPlatforms()
-  const chosen = platforms.filter((p) => selected[p.id])
-  const limit = chosen.length ? Math.min(...chosen.map((p) => p.maxLen)) : null
+  const chosen = accounts.filter((a) => selected[a.id])
+  const limit = chosen.length ? Math.min(...chosen.map((a) => a.maxLen)) : null
   const over = limit != null && text.length > limit
   const hasContent = text.trim().length > 0
   const canSchedule = hasContent && chosen.length > 0 && !over && !uploading
@@ -78,7 +101,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
 
   const payload = () => ({
     text: text.trim(),
-    platforms: chosen.map((p) => p.id),
+    platforms: chosen.map((a) => a.id),
     scheduledAt: new Date(when).toISOString(),
     repeat,
     media: media.map((m) => m.id),
@@ -131,15 +154,18 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {platforms.map((p) => (
-          <button key={p.id} onClick={() => toggle(p.id)}
+        {accounts.length === 0 && (
+          <span className="font-mono text-[11px] text-muted">No accounts connected — see Accounts.</span>
+        )}
+        {accounts.map((a) => (
+          <button key={a.id} onClick={() => toggle(a.id)}
             className={`rounded-lg border px-2.5 py-1 font-mono text-xs transition
-              ${selected[p.id]
-                ? 'border-coral bg-coral/12 text-coral'
+              ${selected[a.id] ? 'border-coral bg-coral/12 text-coral'
                 : 'border-line text-muted hover:border-coral/40 hover:text-fg'}`}>
-            {p.short}
+            {a.short}·{a.handle.replace(/^@/, '').split('.')[0].slice(0, 10)}
           </button>
         ))}
+
         <button onClick={() => fileRef.current?.click()} disabled={uploading}
           className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 font-mono text-xs text-muted transition hover:border-coral/40 hover:text-fg disabled:opacity-40">
           {uploading ? <Loader2 size={14} strokeWidth={1.75} className="animate-spin" /> : <ImagePlus size={14} strokeWidth={1.75} />}

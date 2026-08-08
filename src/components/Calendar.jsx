@@ -13,6 +13,11 @@ const CHIP = {
   [STATUS.FAILED]:     'border-red-500/40 bg-red-500/10 text-red-400',
 }
 
+const short = (t) => {
+  const platform = t.includes(':') ? t.split(':')[0] : t
+  return PLATFORMS[platform]?.short ?? platform
+}
+
 export default function Calendar({ posts }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
   const today = new Date()
@@ -73,7 +78,7 @@ export default function Calendar({ posts }) {
                   const time = new Date(p.scheduledAt).toLocaleTimeString(undefined, {
                     hour: '2-digit', minute: '2-digit', hour12: false,
                   })
-                  const shorts = p.platforms.map((id) => PLATFORMS[id]?.short ?? id).join(' ')
+                  const shorts = p.platforms.map((id) => short(id)).join(' ')
                   return (
                     <div key={p.id} title={p.text}
                       className={`rounded border px-1.5 py-1 font-mono text-[10px] leading-tight ${CHIP[p.status] ?? CHIP[STATUS.DRAFT]}`}>
