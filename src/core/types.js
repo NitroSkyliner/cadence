@@ -13,6 +13,7 @@ export const REPEAT = {
 export const PLATFORMS = {
   bluesky:   { id: 'bluesky',   label: 'Bluesky',   short: 'BS', maxLen: 300 },
   mastodon:  { id: 'mastodon',  label: 'Mastodon',  short: 'MA', maxLen: 500 },
+  threads:   { id: 'threads',   label: 'Threads',   short: 'TH', maxLen: 500 },
   instagram: { id: 'instagram', label: 'Instagram', short: 'IG', maxLen: 2200 },
   x:         { id: 'x',         label: 'X',         short: 'X',  maxLen: 280 },
   linkedin:  { id: 'linkedin',  label: 'LinkedIn',  short: 'LI', maxLen: 3000 },

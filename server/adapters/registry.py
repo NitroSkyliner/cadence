@@ -3,8 +3,7 @@ from .bluesky import BlueskyAdapter
 from .mastodon import MastodonAdapter
 from db import get_credentials
 
-PLATFORM_IDS = ["bluesky", "mastodon", "instagram", "x", "linkedin"]
-
+PLATFORM_IDS = ["bluesky", "mastodon", "threads", "instagram", "x", "linkedin"]
 
 def _build_bluesky(creds):
     return BlueskyAdapter(creds["handle"], creds["app_password"])

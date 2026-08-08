@@ -1,10 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Check, X, Loader2 } from 'lucide-react'
+import { Check, X, Loader2, ExternalLink } from 'lucide-react'
 import { API } from '../core/api.js'
 import { PLATFORMS } from '../core/types.js'
 
-// Per-platform connect form fields. Add a platform here + a builder on the
-// server registry and it becomes connectable with zero other UI changes.
 const CONNECT_FIELDS = {
   bluesky: [
     { name: 'handle', placeholder: 'handle.bsky.social', type: 'text' },
@@ -33,6 +31,13 @@ export default function Accounts() {
 
   useEffect(() => { load() }, [load])
 
+  // Reload when an OAuth popup finishes.
+  useEffect(() => {
+    const onMsg = (e) => { if (e.data === 'cadence-oauth-done') load() }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [load])
+
   if (loading) return <p className="py-8 text-center text-sm text-muted">Loading accounts…</p>
 
   return (
@@ -42,8 +47,9 @@ export default function Accounts() {
         {accounts.map((acc) => <AccountRow key={acc.id} account={acc} onChange={load} />)}
       </div>
       <p className="mt-6 text-xs leading-relaxed text-muted">
-        Credentials live on your local Cadence server, never in the browser. Connected platforms
-        post for real; everything else runs on a mock adapter so you can build and test freely.
+        Credentials and tokens live on your local Cadence server, never in the browser. OAuth platforms
+        connect through a consent screen; until a platform's real app is registered, that flow runs on a
+        local mock provider so you can test the whole round-trip.
       </p>
     </div>
   )
@@ -59,25 +65,24 @@ function AccountRow({ account, onChange }) {
   const setField = (name, v) => setValues((s) => ({ ...s, [name]: v }))
   const allFilled = fields.every((f) => (values[f.name] || '').trim())
 
-  const connect = async () => {
+  const connectForm = async () => {
     setBusy(true); setError(null)
     try {
       const body = Object.fromEntries(fields.map((f) => [f.name, (values[f.name] || '').trim()]))
       const res = await fetch(`${API}/accounts/${account.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       })
-      if (!res.ok) {
-        const b = await res.json().catch(() => ({}))
-        throw new Error(b.detail || 'Could not connect')
-      }
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Could not connect')
       setValues({}); onChange()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(false)
-    }
+    } catch (err) { setError(err.message) } finally { setBusy(false) }
+  }
+
+  const connectOAuth = () => {
+    const w = 520, h = 640
+    const left = window.screenX + (window.outerWidth - w) / 2
+    const top = window.screenY + (window.outerHeight - h) / 2
+    window.open(`${API}/accounts/${account.id}/oauth/start`, 'cadence-oauth',
+      `width=${w},height=${h},left=${left},top=${top}`)
   }
 
   const disconnect = async () => {
@@ -85,12 +90,16 @@ function AccountRow({ account, onChange }) {
     try {
       await fetch(`${API}/accounts/${account.id}`, { method: 'DELETE' })
       onChange()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(false)
-    }
+    } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
+
+  const badge = account.live
+    ? <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400"><Check size={12} strokeWidth={2} /> Live</span>
+    : account.connected
+    ? <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400">Connected</span>
+    : account.supported
+    ? <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-muted">Mock</span>
+    : <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-muted/50">Soon</span>
 
   return (
     <section className="rounded-xl border border-line bg-surface p-5">
@@ -102,24 +111,27 @@ function AccountRow({ account, onChange }) {
           <div>
             <div className="text-sm font-medium text-fg">{meta?.label ?? account.id}</div>
             <div className="font-mono text-[11px] text-muted">
-              {account.connected
-                ? `Connected · ${account.account}`
-                : account.supported ? 'Not connected' : 'Coming soon'}
+              {account.connected ? `Connected · ${account.account}`
+                : account.supported ? (account.oauth ? 'Connect via OAuth' : 'Not connected')
+                : 'Coming soon'}
             </div>
           </div>
         </div>
-        {account.connected ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400">
-            <Check size={12} strokeWidth={2} /> Live
-          </span>
-        ) : account.supported ? (
-          <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-muted">Mock</span>
-        ) : (
-          <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-muted/50">Soon</span>
-        )}
+        {badge}
       </div>
 
-      {account.supported && !account.connected && (
+      {/* OAuth connect */}
+      {account.oauth && !account.connected && (
+        <div className="mt-4">
+          <button onClick={connectOAuth}
+            className="inline-flex items-center gap-2 rounded-lg bg-coral px-4 py-2 text-sm font-medium text-white transition duration-100 hover:-translate-y-1">
+            <ExternalLink size={15} strokeWidth={2} /> Connect
+          </button>
+        </div>
+      )}
+
+      {/* token-form connect */}
+      {!account.oauth && account.supported && !account.connected && (
         <div className="mt-4 flex flex-col gap-2">
           {fields.map((f) => (
             <input key={f.name} value={values[f.name] || ''} onChange={(e) => setField(f.name, e.target.value)}
@@ -127,7 +139,7 @@ function AccountRow({ account, onChange }) {
               className={`rounded-lg border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted outline-none transition focus:border-coral ${f.mono ? 'font-mono' : ''}`} />
           ))}
           {error && <p className="font-mono text-[11px] text-red-400">{error}</p>}
-          <button onClick={connect} disabled={busy || !allFilled}
+          <button onClick={connectForm} disabled={busy || !allFilled}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-coral px-4 py-2 text-sm font-medium text-white transition duration-100 enabled:hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-40">
             {busy && <Loader2 size={15} strokeWidth={2} className="animate-spin" />}
             {busy ? 'Verifying…' : 'Connect'}

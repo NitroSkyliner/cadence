@@ -6,7 +6,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from oauth import is_oauth, new_state, consume_state, build_authorize_url, exchange_code
 from fastapi.middleware.cors import CORSMiddleware
 
 from models import Post, PostPatch
@@ -20,6 +21,15 @@ from db import (
 )
 POLL_SECONDS = 3
 METRICS_REFRESH_SECONDS = 300
+
+def _popup_close_html(error: str | None) -> str:
+    payload = "cadence-oauth-error" if error else "cadence-oauth-done"
+    msg = error or "Connected. You can close this window."
+    return f"""<!doctype html><meta charset="utf-8">
+<body style="font-family:system-ui;background:#0A1220;color:#F5F7FA;display:grid;place-items:center;height:100vh;margin:0">
+<div style="text-align:center"><p>{msg}</p></div>
+<script>try{{window.opener&&window.opener.postMessage("{payload}","*")}}catch(e){{}}
+setTimeout(function(){{window.close()}},800)</script>"""
 
 def _parse_iso(s: str) -> datetime:
     if s.endswith("Z"):
@@ -220,14 +230,16 @@ def get_accounts() -> list[dict]:
     out = []
     for pid in PLATFORM_IDS:
         creds = get_credentials(pid)
+        oauth = is_oauth(pid)
         out.append({
             "id": pid,
-            "supported": is_supported(pid),
-            "connected": is_live(pid),
-            "account": creds.get("handle") if creds else None,   # never the secret
+            "oauth": oauth,
+            "supported": is_supported(pid) or oauth,
+            "connected": bool(creds),
+            "live": is_live(pid),                         # real adapter posting
+            "account": creds.get("handle") if creds else None,
         })
     return out
-
 
 @app.post("/accounts/{platform}")
 async def connect_account(platform: str, creds: dict) -> dict:
@@ -261,3 +273,55 @@ def disconnect_account(platform: str) -> dict:
     delete_credentials(platform)
     invalidate(platform)
     return {"id": platform, "supported": is_supported(platform), "connected": False, "account": None}
+
+
+
+# ---- OAuth connect ----
+@app.get("/accounts/{platform}/oauth/start")
+def oauth_start(platform: str):
+    if not is_oauth(platform):
+        raise HTTPException(400, f"{platform} does not use OAuth")
+    return RedirectResponse(build_authorize_url(platform, new_state(platform)))
+
+
+@app.get("/accounts/{platform}/oauth/callback", response_class=HTMLResponse)
+async def oauth_callback(platform: str, code: str = "", state: str = "", error: str = ""):
+    if error:
+        return _popup_close_html(f"Cancelled: {error}")
+    if consume_state(state) != platform:
+        return _popup_close_html("Invalid or expired state")
+    try:
+        await exchange_code(platform, code)
+    except Exception as e:
+        return _popup_close_html(f"Token exchange failed: {e}")
+    invalidate(platform)
+    return _popup_close_html(None)
+
+
+# ---- mock OAuth provider (stands in for a real platform until you register an app) ----
+@app.get("/mock-oauth/authorize", response_class=HTMLResponse)
+def mock_authorize(redirect_uri: str = "", state: str = "", scope: str = ""):
+    from urllib.parse import urlencode
+    approve = f"{redirect_uri}?{urlencode({'code': 'mock-auth-code', 'state': state})}"
+    deny = f"{redirect_uri}?{urlencode({'error': 'access_denied', 'state': state})}"
+    return f"""<!doctype html><meta charset="utf-8">
+<body style="font-family:system-ui;background:#0A1220;color:#F5F7FA;display:grid;place-items:center;height:100vh;margin:0">
+<div style="text-align:center;max-width:360px">
+  <h2 style="font-weight:600;margin:0 0 8px">Mock provider</h2>
+  <p style="color:#9BA7B6">Authorize <b>Cadence</b> to post on your behalf?<br>
+  <span style="font-family:monospace;font-size:12px">scope: {scope}</span></p>
+  <div style="display:flex;gap:8px;justify-content:center;margin-top:18px">
+    <a href="{approve}" style="background:#FF5C38;color:#fff;padding:10px 18px;border-radius:10px;text-decoration:none">Authorize</a>
+    <a href="{deny}" style="border:1px solid #22334A;color:#9BA7B6;padding:10px 18px;border-radius:10px;text-decoration:none">Cancel</a>
+  </div>
+</div>"""
+
+
+@app.post("/mock-oauth/token")
+def mock_token() -> dict:
+    return {
+        "access_token": f"mock-access-{uuid.uuid4().hex}",
+        "refresh_token": f"mock-refresh-{uuid.uuid4().hex}",
+        "expires_in": 3600, "token_type": "bearer",
+        "scope": "mock", "username": "@you (mock)",
+    }
