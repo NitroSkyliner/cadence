@@ -2,6 +2,7 @@ import httpx
 import asyncio
 from db import load_media_bytes
 from .base import Adapter
+from db import read_media
 
 
 class MastodonAdapter(Adapter):
@@ -27,23 +28,23 @@ class MastodonAdapter(Adapter):
     async def publish(self, post: dict) -> dict:
         try:
             async with httpx.AsyncClient(timeout=60) as client:
+                medias = [m for m in (read_media(mid) for mid in post.get("media", [])) if m]
+                videos = [m for m in medias if m["is_video"]]
+                medias = videos[:1] if videos else medias[:4]   # 1 video, else ≤4 images
+
                 media_ids = []
-                for mid in post.get("media", [])[:4]:
-                    loaded = load_media_bytes(mid)
-                    if not loaded:
-                        continue
-                    data, content_type = loaded
+                for m in medias:
                     up = await client.post(
                         f"{self._base}/api/v2/media",
                         headers=self._headers(),
-                        files={"file": (mid, data, content_type)},
+                        files={"file": ("upload", m["bytes"], m["content_type"])},
+                        data={"description": m["alt"]},        # alt text
                     )
                     up.raise_for_status()
                     remote_id = up.json()["id"]
-                    if up.status_code == 202:                 # async processing (e.g. video)
+                    if up.status_code == 202:                  # video: async processing
                         await self._wait_for_media(client, remote_id)
                     media_ids.append(remote_id)
-
                 form = {"status": post["text"]}
                 if media_ids:
                     form["media_ids[]"] = media_ids           # httpx repeats the key per id

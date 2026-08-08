@@ -78,10 +78,13 @@ def init_db():
                 content_type TEXT NOT NULL,
                 filename     TEXT NOT NULL,
                 size         INTEGER NOT NULL,
+                alt          TEXT NOT NULL DEFAULT '',
                 created_at   INTEGER NOT NULL
             )
         """)
-
+        mcols = {r["name"] for r in c.execute("PRAGMA table_info(media)").fetchall()}
+        if "alt" not in mcols:
+            c.execute("ALTER TABLE media ADD COLUMN alt TEXT NOT NULL DEFAULT ''")
 
 def _row_to_post(row) -> dict:
     return {
@@ -219,3 +222,22 @@ def load_media_bytes(media_id: str):
     if meta is None or not path.exists():
         return None
     return path.read_bytes(), meta["content_type"]
+
+def read_media(media_id: str):
+    """Everything an adapter needs to post one media item."""
+    meta = get_media(media_id)
+    path = MEDIA_DIR / media_id
+    if meta is None or not path.exists():
+        return None
+    ct = meta["content_type"] or ""
+    return {
+        "bytes": path.read_bytes(),
+        "content_type": ct,
+        "alt": meta.get("alt", ""),
+        "is_video": ct.startswith("video/"),
+    }
+
+
+def set_media_alt(media_id: str, alt: str):
+    with _conn() as c:
+        c.execute("UPDATE media SET alt = ? WHERE id = ?", (alt, media_id))

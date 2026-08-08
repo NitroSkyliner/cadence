@@ -314,3 +314,20 @@ def mock_token() -> dict:
         "expires_in": 3600, "token_type": "bearer",
         "scope": "mock", "username": "@you (mock)",
     }
+
+@app.get("/media/{media_id}/meta")
+def media_meta(media_id: str) -> dict:
+    from db import get_media
+    meta = get_media(media_id)
+    if meta is None:
+        raise HTTPException(404, "Media not found")
+    return {"id": media_id, "content_type": meta["content_type"], "alt": meta.get("alt", "")}
+
+
+@app.patch("/media/{media_id}")
+def media_set_alt(media_id: str, body: dict) -> dict:
+    from db import get_media, set_media_alt
+    if get_media(media_id) is None:
+        raise HTTPException(404, "Media not found")
+    set_media_alt(media_id, (body.get("alt") or "").strip())
+    return {"ok": True}

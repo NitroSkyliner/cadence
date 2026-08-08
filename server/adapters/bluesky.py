@@ -2,6 +2,7 @@ from atproto import AsyncClient
 
 from .base import Adapter
 from db import load_media_bytes
+from db import read_media
 
 class BlueskyAdapter(Adapter):
     def __init__(self, handle: str, app_password: str):
@@ -28,9 +29,17 @@ class BlueskyAdapter(Adapter):
                     images.append(loaded[0])
                     alts.append("")                    # alt text: wired in a later pass
 
+            medias = [m for m in (read_media(mid) for mid in post.get("media", [])) if m]
+            if any(m["is_video"] for m in medias):
+                return {"ok": False,
+                        "error": "Bluesky video isn't supported yet (needs the video service + a verified email)"}
+
+            images = medias[:4]                          # Bluesky allows up to 4 images
             if images:
                 response = await client.send_images(
-                    text=post["text"], images=images, image_alts=alts
+                    text=post["text"],
+                    images=[m["bytes"] for m in images],
+                    image_alts=[m["alt"] for m in images],   # real alt text now
                 )
             else:
                 response = await client.send_post(text=post["text"])
