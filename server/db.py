@@ -170,3 +170,12 @@ def get_media(media_id: str) -> dict | None:
     with _conn() as c:
         row = c.execute("SELECT * FROM media WHERE id = ?", (media_id,)).fetchone()
     return dict(row) if row else None
+
+
+def load_media_bytes(media_id: str):
+    """Return (bytes, content_type) for a stored media id, or None."""
+    meta = get_media(media_id)
+    path = MEDIA_DIR / media_id
+    if meta is None or not path.exists():
+        return None
+    return path.read_bytes(), meta["content_type"]

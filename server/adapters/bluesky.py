@@ -1,7 +1,7 @@
 from atproto import AsyncClient
 
 from .base import Adapter
-
+from db import load_media_bytes
 
 class BlueskyAdapter(Adapter):
     def __init__(self, handle: str, app_password: str):
@@ -20,10 +20,24 @@ class BlueskyAdapter(Adapter):
     async def publish(self, post: dict) -> dict:
         try:
             client = await self._get_client()
-            response = await client.send_post(text=post["text"])
-            return {"ok": True, "ref": response.uri}    # AT-URI of the real post
+
+            images, alts = [], []
+            for mid in post.get("media", [])[:4]:      # Bluesky allows up to 4
+                loaded = load_media_bytes(mid)
+                if loaded:
+                    images.append(loaded[0])
+                    alts.append("")                    # alt text: wired in a later pass
+
+            if images:
+                response = await client.send_images(
+                    text=post["text"], images=images, image_alts=alts
+                )
+            else:
+                response = await client.send_post(text=post["text"])
+
+            return {"ok": True, "ref": response.uri}
         except Exception as e:
-            self._client = None                         # force re-login next time
+            self._client = None
             return {"ok": False, "error": str(e)}
 
     async def fetch_metrics(self, ref: str) -> dict:
