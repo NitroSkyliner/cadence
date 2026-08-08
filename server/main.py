@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from models import Post, PostPatch
 from config import bluesky_credentials
 from adapters.registry import (
-    get_adapter, invalidate, is_live, is_supported, make_real_adapter, PLATFORM_IDS,
+    get_adapter, invalidate, is_supported, make_real_adapter, PLATFORM_IDS,
 )
 from db import (
     init_db, list_posts, upsert_post, patch_post, get_post, delete_post,
@@ -126,12 +126,11 @@ async def _worker():
 
 def _seed_from_env():
     # One-time: import .env Bluesky creds into the DB if nothing's stored yet.
-    if get_credentials("bluesky") is None:
+    if not list_connections("bluesky"):
         creds = bluesky_credentials()
         if creds:
-            set_credentials("bluesky", {"handle": creds[0], "app_password": creds[1]})
+            set_connection("bluesky", creds[0], {"handle": creds[0], "app_password": creds[1]})
             print(f"[seed] imported Bluesky creds from .env for {creds[0]}")
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -285,28 +284,6 @@ async def oauth_callback(platform: str, code: str = "", state: str = "", error: 
     except Exception as e:
         return _popup_close_html(f"Token exchange failed: {e}")
     invalidate(cid)
-    return _popup_close_html(None)
-
-
-# ---- OAuth connect ----
-@app.get("/accounts/{platform}/oauth/start")
-def oauth_start(platform: str):
-    if not is_oauth(platform):
-        raise HTTPException(400, f"{platform} does not use OAuth")
-    return RedirectResponse(build_authorize_url(platform, new_state(platform)))
-
-
-@app.get("/accounts/{platform}/oauth/callback", response_class=HTMLResponse)
-async def oauth_callback(platform: str, code: str = "", state: str = "", error: str = ""):
-    if error:
-        return _popup_close_html(f"Cancelled: {error}")
-    if consume_state(state) != platform:
-        return _popup_close_html("Invalid or expired state")
-    try:
-        await exchange_code(platform, code)
-    except Exception as e:
-        return _popup_close_html(f"Token exchange failed: {e}")
-    invalidate(platform)
     return _popup_close_html(None)
 
 
