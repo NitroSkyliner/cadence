@@ -22,7 +22,7 @@ _REAL = {
     "linkedin": {
         "authorize_url": "https://www.linkedin.com/oauth/v2/authorization",
         "token_url": "https://www.linkedin.com/oauth/v2/accessToken",
-        "scopes": "w_member_social",
+        "scopes": "openid profile w_member_social",
     },
 }
 
@@ -139,3 +139,9 @@ def _token_fields(tok: dict) -> dict:
 async def valid_access_token(conn_id: str) -> str | None:
     conn = await refresh_if_needed(conn_id)
     return conn["data"].get("access_token") if conn else None
+
+
+def has_real_oauth(platform: str) -> bool:
+    """True once real CLIENT_ID/SECRET are configured for this platform."""
+    prefix = platform.upper()
+    return bool(os.environ.get(f"{prefix}_CLIENT_ID") and os.environ.get(f"{prefix}_CLIENT_SECRET"))
