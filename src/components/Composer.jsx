@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Send, FileText, X, ImagePlus, Film, Loader2, Plus } from 'lucide-react'
+import { Send, FileText, X, ImagePlus, Film, Loader2, Plus, MessageCircle } from 'lucide-react'
 import { createPost, STATUS, REPEAT, PLATFORMS } from '../core/types.js'
 import { API } from '../core/api.js'
 
@@ -18,6 +18,8 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   const [variants, setVariants] = useState({})       // platform -> override text
   const [activeTab, setActiveTab] = useState('all')
   const [thread, setThread] = useState([])
+  const [firstComment, setFirstComment] = useState('')
+  const [fcOpen, setFcOpen] = useState(false)
   const [selected, setSelected] = useState({})
   const [when, setWhen] = useState(nowLocalInput())
   const [repeat, setRepeat] = useState(REPEAT.NONE)
@@ -45,6 +47,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   useEffect(() => {
     if (editing) {
       setText(editing.text); setVariants(editing.variants || {}); setThread(editing.thread || [])
+      setFirstComment(editing.first_comment || ''); setFcOpen(Boolean(editing.first_comment))
       setSelected(Object.fromEntries(editing.platforms.map((id) => [id, true])))
       setWhen(isoToLocalInput(editing.scheduledAt)); setRepeat(editing.repeat || REPEAT.NONE)
       setActiveTab('all')
@@ -60,6 +63,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
     } else {
       setText(''); setVariants({}); setThread([]); setSelected({}); setWhen(nowLocalInput())
       setRepeat(REPEAT.NONE); setMedia([]); setActiveTab('all')
+      setFirstComment(''); setFcOpen(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing?.id])
@@ -92,6 +96,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   const reset = () => {
     setText(''); setVariants({}); setThread([]); setSelected({}); setWhen(nowLocalInput())
     setRepeat(REPEAT.NONE); setMedia([]); setActiveTab('all')
+    setFirstComment(''); setFcOpen(false)
   }
 
   const onFiles = async (e) => {
@@ -119,6 +124,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
     scheduledAt: new Date(when).toISOString(), repeat,
     media: media.map((m) => m.id), thread: thread.map((s) => s.trim()).filter(Boolean),
     variants: Object.fromEntries(Object.entries(variants).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v)),
+    first_comment: firstComment.trim(),
   })
   const schedule = () => {
     if (!canSchedule) return
@@ -200,9 +206,20 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
         </div>
       )}
 
-      <button onClick={addSeg} className="mt-2 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted transition hover:text-coral">
-        <Plus size={12} strokeWidth={2} /> ADD TO THREAD
-      </button>
+      <div className="mt-2 flex items-center gap-4">
+        <button onClick={addSeg} className="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted transition hover:text-coral">
+          <Plus size={12} strokeWidth={2} /> ADD TO THREAD
+        </button>
+        <button onClick={() => setFcOpen((v) => !v)}
+          className={`inline-flex items-center gap-1.5 font-mono text-[11px] transition hover:text-coral ${fcOpen || firstComment ? 'text-coral' : 'text-muted'}`}>
+          <MessageCircle size={12} strokeWidth={2} /> FIRST COMMENT
+        </button>
+      </div>
+      {(fcOpen || firstComment) && (
+        <textarea value={firstComment} onChange={(e) => setFirstComment(e.target.value)}
+          placeholder="First comment (hashtags, links)… — Bluesky & Mastodon" rows={2}
+          className="mt-2 w-full resize-none rounded-lg border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted outline-none transition focus:border-coral" />
+      )}
 
       {effTab !== 'all' && (
         <p className="mt-2 font-mono text-[11px] text-muted">Editing {PLATFORMS[effTab]?.label} only. Thread &amp; media are shared across platforms.</p>

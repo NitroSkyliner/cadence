@@ -26,6 +26,7 @@ class Post(BaseModel):
     media: list[str] = Field(default_factory=list)     # media ids
     thread: list[str] = Field(default_factory=list)     # extra parts after the main text
     variants: dict[str, str] = Field(default_factory=dict)   # platform id -> override text
+    first_comment: str = ""
     createdAt: int
 
 
@@ -40,3 +41,4 @@ class PostPatch(BaseModel):
     media: Optional[list[str]] = None
     thread: Optional[list[str]] = None
     variants: Optional[dict[str, str]] = None
+    first_comment: Optional[str] = None

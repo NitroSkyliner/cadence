@@ -69,6 +69,15 @@ class MastodonAdapter(Adapter):
                     rr.raise_for_status()
                     prev_id = str(rr.json()["id"])
 
+                first_comment = (post.get("first_comment") or "").strip()
+                if first_comment:
+                    rc = await client.post(
+                        f"{self._base}/api/v1/statuses",
+                        headers={**self._headers(), "Idempotency-Key": f"{post['id']}-fc"},
+                        data={"status": first_comment, "in_reply_to_id": first_id},
+                    )
+                    rc.raise_for_status()
+
                 return {"ok": True, "ref": first_id}
         except Exception as e:
             return {"ok": False, "error": str(e)}

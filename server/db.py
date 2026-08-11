@@ -12,8 +12,7 @@ MEDIA_DIR = BASE / "media"
 MEDIA_DIR.mkdir(exist_ok=True)
 
 _JSON_COLS = {"platforms", "results", "metrics", "media", "thread", "variants"}
-_MUTABLE = {"text", "platforms", "scheduledAt", "status", "results", "metrics", "repeat", "media", "thread", "variants"}
-
+_MUTABLE = {"text", "platforms", "scheduledAt", "status", "results", "metrics", "repeat", "media", "thread", "variants", "first_comment"}
 @contextmanager
 def _conn():
     conn = sqlite3.connect(DB_PATH, timeout=5)
@@ -40,6 +39,7 @@ def init_db():
                 media       TEXT NOT NULL DEFAULT '[]',
                 thread      TEXT NOT NULL DEFAULT '[]',
                 variants    TEXT NOT NULL DEFAULT '{}',
+                first_comment TEXT NOT NULL DEFAULT '',
                 createdAt   INTEGER NOT NULL
             )
         """)
@@ -54,6 +54,8 @@ def init_db():
             c.execute("ALTER TABLE posts ADD COLUMN thread TEXT NOT NULL DEFAULT '[]'")
         if "variants" not in cols:
             c.execute("ALTER TABLE posts ADD COLUMN variants TEXT NOT NULL DEFAULT '{}'")
+        if "first_comment" not in cols:
+            c.execute("ALTER TABLE posts ADD COLUMN first_comment TEXT NOT NULL DEFAULT ''")
         c.execute("""
             CREATE TABLE IF NOT EXISTS connections (
                 id           TEXT PRIMARY KEY,   -- e.g. "bluesky:you.bsky.social"
@@ -105,6 +107,7 @@ def _row_to_post(row) -> dict:
         "createdAt": row["createdAt"],
         "thread": json.loads(row["thread"]),
         "variants": json.loads(row["variants"]),
+        "first_comment": row["first_comment"],
     }
 
 
@@ -124,8 +127,8 @@ def upsert_post(post: Post) -> dict:
     with _conn() as c:
         c.execute(
             """INSERT OR REPLACE INTO posts
-               (id, text, platforms, scheduledAt, status, results, metrics, repeat, media, thread, variants, createdAt)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, text, platforms, scheduledAt, status, results, metrics, repeat, media, thread, variants, first_comment, createdAt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 post.id,
                 post.text,
@@ -138,6 +141,7 @@ def upsert_post(post: Post) -> dict:
                 json.dumps(post.media),
                 json.dumps(post.thread),
                 json.dumps(post.variants),
+                post.first_comment,
                 post.createdAt,
             ),
         )

@@ -43,6 +43,29 @@ class BlueskyAdapter(Adapter):
                         response = await client.send_post(text=post["text"])
 
                 thread = post.get("thread") or []
+                first_comment = (post.get("first_comment") or "").strip()
+                root_ref = None
+                if thread or first_comment:
+                    root_ref = models.create_strong_ref(response)
+
+                parent_ref = root_ref
+                for seg in thread:
+                    seg = seg.strip()
+                    if not seg:
+                        continue
+                    reply = await client.send_post(
+                        text=seg,
+                        reply_to=models.AppBskyFeedPost.ReplyRef(parent=parent_ref, root=root_ref),
+                    )
+                    parent_ref = models.create_strong_ref(reply)
+
+                if first_comment:
+                    await client.send_post(          # replies to the ROOT, not the thread tail
+                        text=first_comment,
+                        reply_to=models.AppBskyFeedPost.ReplyRef(parent=root_ref, root=root_ref),
+                    )
+
+                return {"ok": True, "ref": response.uri}
                 if thread:
                     root_ref = models.create_strong_ref(response)
                     parent_ref = root_ref
