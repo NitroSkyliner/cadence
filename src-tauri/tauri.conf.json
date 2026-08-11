@@ -1,40 +1,23 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "Cadence",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.velarox.cadence",
   "build": {
-    "frontendDist": "../dist",
-    "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build:desktop"
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build:desktop",
+    "frontendDist": "../dist"
   },
   "app": {
     "windows": [
-      {
-        "title": "Cadence",
-        "width": 800,
-        "height": 600,
-        "resizable": true,
-        "fullscreen": false
-      }
+      { "title": "Cadence", "width": 1200, "height": 800, "minWidth": 940, "minHeight": 640 }
     ],
-    "security": {
-      "csp": null
-    }
+    "security": { "csp": null }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ],
-    "android": {
-      "debugApplicationIdSuffix": ".debug"
-    }
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.icns", "icons/icon.ico"]
   }
 }

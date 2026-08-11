@@ -2,6 +2,9 @@ import os
 import base64
 import hashlib
 
+
+import config
+
 from cryptography.fernet import Fernet, InvalidToken
 
 _PREFIX = "enc:v1:"

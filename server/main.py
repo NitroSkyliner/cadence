@@ -216,7 +216,7 @@ app = FastAPI(title="Cadence API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ORIGINS", "http://localhost:5173").split(","),
+        allow_origins=os.environ.get("CORS_ORIGINS", "http://localhost:5173,tauri://localhost,http://tauri.localhost").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
