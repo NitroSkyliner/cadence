@@ -22,37 +22,39 @@ class BlueskyAdapter(Adapter):
         return self._client
 
     async def publish(self, post: dict) -> dict:
-            try:
-                client = await self._get_client()
+        try:
+            client = await self._get_client()
 
-                medias = [m for m in (read_media(mid) for mid in post.get("media", [])) if m]
-                videos = [m for m in medias if m["is_video"]]
+            medias = [m for m in (read_media(mid) for mid in post.get("media", [])) if m]
+            videos = [m for m in medias if m["is_video"]]
 
-                if videos:
-                    embed = await self._video_embed(client, videos[0])     # 1 video per post
-                    response = await client.send_post(text=post["text"], embed=embed)
+            if videos:
+                embed = await self._video_embed(client, videos[0])     # 1 video per post
+                response = await client.send_post(text=post["text"], embed=embed)
+            else:
+                images = medias[:4]
+                if images:
+                    response = await client.send_images(
+                        text=post["text"],
+                        images=[m["bytes"] for m in images],
+                        image_alts=[m["alt"] for m in images],
+                    )
                 else:
-                    images = medias[:4]
-                    if images:
-                        response = await client.send_images(
-                            text=post["text"],
-                            images=[m["bytes"] for m in images],
-                            image_alts=[m["alt"] for m in images],
-                        )
-                    else:
-                        response = await client.send_post(text=post["text"])
+                    response = await client.send_post(text=post["text"])
 
-                thread = post.get("thread") or []
-                first_comment = (post.get("first_comment") or "").strip()
-                root_ref = None
-                if thread or first_comment:
-                    root_ref = models.create_strong_ref(response)
+            thread = post.get("thread") or []
+            first_comment = (post.get("first_comment") or "").strip()
 
+            parent_ref = root_ref = None
+            if thread or first_comment:
+                root_ref = models.create_strong_ref(response)
                 parent_ref = root_ref
+
                 for seg in thread:
                     seg = seg.strip()
                     if not seg:
                         continue
+                    assert root_ref is not None and parent_ref is not None
                     reply = await client.send_post(
                         text=seg,
                         reply_to=models.AppBskyFeedPost.ReplyRef(parent=parent_ref, root=root_ref),
@@ -60,30 +62,17 @@ class BlueskyAdapter(Adapter):
                     parent_ref = models.create_strong_ref(reply)
 
                 if first_comment:
+                    assert root_ref is not None
                     await client.send_post(          # replies to the ROOT, not the thread tail
                         text=first_comment,
                         reply_to=models.AppBskyFeedPost.ReplyRef(parent=root_ref, root=root_ref),
                     )
 
-                return {"ok": True, "ref": response.uri}
-                if thread:
-                    root_ref = models.create_strong_ref(response)
-                    parent_ref = root_ref
-                    for seg in thread:
-                        seg = seg.strip()
-                        if not seg:
-                            continue
-                        reply = await client.send_post(
-                            text=seg,
-                            reply_to=models.AppBskyFeedPost.ReplyRef(parent=parent_ref, root=root_ref),
-                        )
-                        parent_ref = models.create_strong_ref(reply)
+            return {"ok": True, "ref": response.uri}
 
-                return {"ok": True, "ref": response.uri}
-
-            except Exception as e:
-                self._client = None
-                return {"ok": False, "error": str(e)}
+        except Exception as e:
+            self._client = None
+            return {"ok": False, "error": str(e)}
 
     async def _video_embed(self, client, media):
         did = client.me.did
