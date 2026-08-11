@@ -1,6 +1,8 @@
-import { useState, useMemo } from 'react'
 import { RefreshCw, Download, Heart, Repeat2, MessageCircle } from 'lucide-react'
 import { STATUS, PLATFORMS } from '../core/types.js'
+import { useState, useMemo, useEffect } from 'react'
+import { API } from '../core/api.js'
+import TrendChart from './TrendChart.jsx'
 
 const RANGES = [
   { id: 7, label: '7D' }, { id: 30, label: '30D' }, { id: 90, label: '90D' }, { id: 0, label: 'ALL' },
@@ -63,6 +65,30 @@ export default function Insights({ posts, onRefresh }) {
     [...published].map((p) => ({ p, e: postEng(p) })).sort((a, b) => b.e - a.e).slice(0, 5)
   , [published])
 
+  const [history, setHistory] = useState([])
+  useEffect(() => {
+    (async () => {
+      try { setHistory(await (await fetch(`${API}/metrics/history?days=${days || 365}`)).json()) }
+      catch (err) { console.error('Failed to load history:', err) }
+    })()
+  }, [days])
+
+  const trend = useMemo(() => {
+    if (!history.length) return []
+    // For each day, take the LATEST snapshot per (post,target), sum engagement → account total that day.
+    const byDay = {}
+    for (const s of history) {
+      const d = new Date(s.taken_at); d.setHours(0, 0, 0, 0)
+      const key = d.getTime(), pt = `${s.post_id}|${s.target}`
+      const day = byDay[key] || (byDay[key] = { date: d, latest: {} })
+      day.latest[pt] = (s.likes || 0) + (s.reposts || 0) + (s.replies || 0)   // later rows overwrite = latest wins
+    }
+    return Object.values(byDay).sort((a, b) => a.date - b.date).map((day) => ({
+      label: day.date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }),
+      value: Object.values(day.latest).reduce((s, v) => s + v, 0),
+    }))
+  }, [history])
+
   const maxBucket = Math.max(1, ...buckets.map((b) => b.engagement))
   const maxPlat = Math.max(1, ...byPlatform.map((b) => b.engagement))
 
@@ -120,6 +146,11 @@ export default function Insights({ posts, onRefresh }) {
           </div>
         ))}
       </div>
+
+      <section className="rounded-xl border border-line bg-surface p-5">
+        <p className="mb-4 font-mono text-xs tracking-wider text-muted">ENGAGEMENT TREND</p>
+        <TrendChart series={trend} />
+      </section>
 
       <section className="rounded-xl border border-line bg-surface p-5">
         <p className="mb-4 font-mono text-xs tracking-wider text-muted">ENGAGEMENT BY POST DATE</p>

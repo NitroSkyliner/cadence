@@ -18,7 +18,7 @@ from adapters.registry import (
 from db import (
     init_db, list_posts, upsert_post, patch_post, get_post, delete_post,
     list_connections, get_connection, set_connection, delete_connection, resolve_target,
-    MEDIA_DIR, add_media, get_media, list_categories, add_category, delete_category, list_media, delete_media
+    MEDIA_DIR, add_media, get_media, list_categories, add_category, delete_category, list_media, delete_media, add_snapshot, snapshots_since
 )
 from oauth import is_oauth, new_state, consume_state, build_authorize_url, exchange_code
 
@@ -71,19 +71,19 @@ async def _publish(post: dict):
     from oauth import is_oauth, refresh_if_needed
     patch_post(post["id"], {"status": "publishing"})
     results = {}
-    for target in post["platforms"]:
-        conn = resolve_target(target)
+    for platform_id in post["platforms"]:
+        conn = resolve_target(platform_id)
         if conn is None:
-            results[target] = {"ok": False, "error": "account not connected"}
+            results[platform_id] = {"ok": False, "error": "account not connected"}
             continue
         if is_oauth(conn["platform"]):
             await refresh_if_needed(conn["id"])
         variant = (post.get("variants") or {}).get(conn["platform"])
         effective = {**post, "text": variant} if variant else post
         try:
-            results[target] = await get_adapter(target).publish(effective)
+            results[platform_id] = await get_adapter(platform_id).publish(effective)
         except Exception as e:
-            results[target] = {"ok": False, "error": str(e)}
+            results[platform_id] = {"ok": False, "error": str(e)}
     all_ok = all(r.get("ok") for r in results.values())
     patch_post(post["id"], {"status": "published" if all_ok else "failed", "results": results})
 
@@ -101,12 +101,14 @@ async def _refresh_all_metrics(since_days: int = 14):
         if _parse_iso(post["scheduledAt"]) < cutoff:
             continue          # engagement on old posts has settled; skip to bound API calls
         metrics = {}
-        for target, result in post["results"].items():
+        for platform_id, result in post["results"].items():
             if result.get("ok") and result.get("ref"):
                 try:
-                    metrics[target] = await get_adapter(target).fetch_metrics(result["ref"])
+                    m = await get_adapter(platform_id).fetch_metrics(result["ref"])
+                    metrics[platform_id] = m
+                    add_snapshot(post["id"], platform_id, m, int(datetime.now(timezone.utc).timestamp() * 1000))
                 except Exception as e:
-                    print(f"[metrics] {post['id']} {target}: {e}")
+                    print(f"[metrics] {post['id']} {platform_id}: {e}")
         if metrics:
             patch_post(post["id"], {"metrics": metrics})
 
@@ -366,3 +368,8 @@ def media_list() -> list[dict]:
 def media_delete(media_id: str) -> dict:
     delete_media(media_id)
     return {"ok": True, "id": media_id}
+
+@app.get("/metrics/history")
+def metrics_history(days: int = 30) -> list[dict]:
+    since = int((datetime.now(timezone.utc).timestamp() - days * 86400) * 1000)
+    return snapshots_since(since)
