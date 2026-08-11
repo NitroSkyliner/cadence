@@ -287,3 +287,16 @@ def delete_category(cat_id: str):
     with _conn() as c:
         c.execute("DELETE FROM categories WHERE id = ?", (cat_id,))
         c.execute("UPDATE posts SET category = NULL WHERE category = ?", (cat_id,))   # unlink
+
+def list_media() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT id, content_type, filename, size, alt, created_at FROM media ORDER BY created_at DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_media(media_id: str):
+    with _conn() as c:
+        c.execute("DELETE FROM media WHERE id = ?", (media_id,))
+    path = MEDIA_DIR / media_id
+    if path.exists():
+        path.unlink()

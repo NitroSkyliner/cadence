@@ -4,6 +4,8 @@ import Preview from './Preview.jsx'
 import { createPost, STATUS, REPEAT, PLATFORMS } from '../core/types.js'
 import { API } from '../core/api.js'
 import { useCategories } from '../core/useCategories.js'
+import { MediaPicker } from './MediaLibrary.jsx'
+import { Library } from 'lucide-react'
 
 function nowLocalInput() {
   const d = new Date(); d.setSeconds(0, 0)
@@ -34,6 +36,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   const [showPreview, setShowPreview] = useState(false)
   const { categories, createCategory } = useCategories()
   const [category, setCategory] = useState(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   useEffect(() => {
     (async () => {
@@ -279,6 +282,10 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
             className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 font-mono text-xs text-muted transition enabled:hover:border-coral/40 enabled:hover:text-fg disabled:opacity-40">
             <Film size={14} strokeWidth={1.75} /> VIDEO
           </button>
+          <button onClick={() => setPickerOpen(true)} disabled={hasVideo || uploading}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 font-mono text-xs text-muted transition enabled:hover:border-coral/40 enabled:hover:text-fg disabled:opacity-40">
+            <Library size={14} strokeWidth={1.75} /> LIBRARY
+          </button>
         </div>
         <input ref={imgRef} type="file" accept="image/*" multiple onChange={onFiles} className="hidden" />
         <input ref={vidRef} type="file" accept="video/*" onChange={onFiles} className="hidden" />
@@ -327,6 +334,28 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
         </button>
       </div>
       {showPreview && chosen.length > 0 && <Preview renders={previews} />}
+      {pickerOpen && (
+        <MediaPicker
+          onClose={() => setPickerOpen(false)}
+          disabledIds={media.map((m) => m.id)}
+          onPick={(picked) => {
+            setMedia((prev) => {
+              const existing = new Set(prev.map((m) => m.id))
+              let next = [...prev]
+              for (const m of picked) {
+                if (existing.has(m.id)) continue
+                const isVid = (m.content_type || '').startsWith('video/')
+                const hasVid = next.some((x) => (x.content_type || '').startsWith('video/'))
+                if (isVid && next.length > 0) continue          // video must be solo
+                if (!isVid && (hasVid || next.filter((x) => !(x.content_type || '').startsWith('video/')).length >= 4)) continue
+                next.push({ id: m.id, url: `${API}/media/${m.id}`, content_type: m.content_type, alt: m.alt || '' })
+                if (isVid) break
+              }
+              return next
+            })
+          }}
+        />
+      )}
     </section>
   )
 }

@@ -18,7 +18,7 @@ from adapters.registry import (
 from db import (
     init_db, list_posts, upsert_post, patch_post, get_post, delete_post,
     list_connections, get_connection, set_connection, delete_connection, resolve_target,
-    MEDIA_DIR, add_media, get_media, list_categories, add_category, delete_category
+    MEDIA_DIR, add_media, get_media, list_categories, add_category, delete_category, list_media, delete_media
 )
 from oauth import is_oauth, new_state, consume_state, build_authorize_url, exchange_code
 
@@ -356,3 +356,13 @@ def create_category(body: dict) -> dict:
 def remove_category(cat_id: str) -> dict:
     delete_category(cat_id)
     return {"ok": True, "id": cat_id}
+
+@app.get("/media")
+def media_list() -> list[dict]:
+    return list_media()
+
+
+@app.delete("/media/{media_id}")
+def media_delete(media_id: str) -> dict:
+    delete_media(media_id)
+    return {"ok": True, "id": media_id}

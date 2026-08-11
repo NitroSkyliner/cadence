@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Logo } from './components/Logo.jsx'
 import Composer from './components/Composer.jsx'
 import Queue from './components/Queue.jsx'
@@ -6,14 +5,24 @@ import Calendar from './components/Calendar.jsx'
 import { usePosts } from './core/usePosts.js'
 import { STATUS } from './core/types.js'
 import Insights from './components/Insights.jsx'
-import { ListChecks, CalendarDays, BarChart3, Plug } from 'lucide-react'
 import Accounts from './components/Accounts.jsx'
+import { ListChecks, CalendarDays, BarChart3, Plug, Upload } from 'lucide-react'
+import Import from './components/Import.jsx'
+import { useCategories } from './core/useCategories.js'
+import { useState, useEffect } from 'react'
+import { API } from './core/api.js'
+import { PLATFORMS } from './core/types.js'
+import MediaLibrary from './components/MediaLibrary.jsx'
+import { Images } from 'lucide-react'
 
 const NAV = [
   { id: 'queue', label: 'Queue', icon: ListChecks },
   { id: 'calendar', label: 'Calendar', icon: CalendarDays },
+  { id: 'import', label: 'Import', icon: Upload },
+  { id: 'library', label: 'Library', icon: Images },
   { id: 'insights', label: 'Insights', icon: BarChart3 },
   { id: 'accounts', label: 'Accounts', icon: Plug },
+  
 ]
 
 export default function App() {
@@ -23,6 +32,21 @@ export default function App() {
   const activeLabel = NAV.find((n) => n.id === view)?.label ?? ''
   const [editingId, setEditingId] = useState(null)
   const editing = posts.find((p) => p.id === editingId) || null
+
+  const { categories } = useCategories()
+  const [importAccounts, setImportAccounts] = useState([])
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await (await fetch(`${API}/accounts`)).json()
+        const flat = []
+        for (const p of data)
+          for (const c of (p.connections || []))
+            flat.push({ id: c.id, handle: c.handle, platform: p.id, maxLen: PLATFORMS[p.id]?.maxLen ?? 500 })
+        setImportAccounts(flat)
+      } catch (err) { console.error(err) }
+    })()
+  }, [])
 
   const handleUpdate = async (id, changes) => {
     await updatePost(id, changes)
@@ -63,6 +87,7 @@ export default function App() {
         </header>
 
         <main className="flex-1 p-8">
+          {view === 'import' && <Import accounts={importAccounts} categories={categories} onImported={() => setView('queue')} />}
           {view === 'queue' && (
             <div className="grid gap-6 lg:grid-cols-[minmax(0,380px)_1fr]">
               <Composer
@@ -75,6 +100,7 @@ export default function App() {
               <Queue posts={posts} onEdit={setEditingId} onDelete={deletePost} />
             </div>
           )}
+          {view === 'library' && <MediaLibrary />}
           {view === 'calendar' && <Calendar posts={posts} onReschedule={updatePost} />}
           {view === 'insights' && <Insights posts={posts} onRefresh={refreshMetrics} />}
           {view === 'accounts' && <Accounts />}
