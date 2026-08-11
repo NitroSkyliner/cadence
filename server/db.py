@@ -7,6 +7,7 @@ from contextlib import contextmanager
 import os
 
 from models import Post
+from crypto import encrypt, decrypt
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", str(Path(__file__).parent)))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -249,21 +250,20 @@ def list_connections(platform: str | None = None) -> list[dict]:
         args = (platform,)
     with _conn() as c:
         rows = c.execute(q + " ORDER BY connected_at", args).fetchall()
-    return [{**dict(r), "data": json.loads(r["data"])} for r in rows]
-
+    return [{**dict(r), "data": json.loads(decrypt(r["data"]))} for r in rows]
 
 def get_connection(conn_id: str) -> dict | None:
     with _conn() as c:
         row = c.execute("SELECT * FROM connections WHERE id = ?", (conn_id,)).fetchone()
-    return {**dict(row), "data": json.loads(row["data"])} if row else None
-
+    return {**dict(row), "data": json.loads(decrypt(row["data"]))} if row else None
 
 def set_connection(platform: str, handle: str, data: dict) -> str:
     cid = make_conn_id(platform, handle)
+    blob = encrypt(json.dumps(data))
     with _conn() as c:
         c.execute(
             "INSERT OR REPLACE INTO connections (id, platform, handle, data, connected_at) VALUES (?, ?, ?, ?, ?)",
-            (cid, platform, handle, json.dumps(data), int(time.time() * 1000)),
+            (cid, platform, handle, blob, int(time.time() * 1000)),
         )
     return cid
 

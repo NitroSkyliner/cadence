@@ -201,6 +201,12 @@ def _seed_from_env():
 async def lifespan(app: FastAPI):
     init_db()
     _seed_from_env()
+    from crypto import is_enabled
+    if is_enabled():
+        from db import list_connections, set_connection
+        for conn in list_connections():                 # decrypts (or reads plaintext)…
+            set_connection(conn["platform"], conn["handle"], conn["data"])   # …re-writes encrypted
+        print("[crypto] credentials encrypted at rest")
     task = asyncio.create_task(_worker())
     yield
     task.cancel()
