@@ -120,7 +120,7 @@ class BlueskyAdapter(Adapter):
         if blob is None:
             raise Exception("video processing timed out")
 
-        return models.AppBskyEmbedVideo.Main(video=blob, alt=media["alt"] or None)
+        return models.AppBskyEmbedVideo.Main(video=blob, alt=media["alt"] or None)  # type: ignore[call-arg]
     
     async def fetch_metrics(self, ref: str) -> dict:
         try:

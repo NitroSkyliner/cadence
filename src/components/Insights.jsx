@@ -5,6 +5,7 @@ import { API } from '../core/api.js'
 import TrendChart from './TrendChart.jsx'
 import BestTime from './BestTime.jsx'
 import FollowerGrowth from './FollowerGrowth.jsx'
+import LinkStats from './LinkStats.jsx'
 
 const RANGES = [
   { id: 7, label: '7D' }, { id: 30, label: '30D' }, { id: 90, label: '90D' }, { id: 0, label: 'ALL' },
@@ -119,7 +120,7 @@ export default function Insights({ posts, onRefresh }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="inline-flex rounded-lg border border-line p-0.5">
-        {[['overview', 'OVERVIEW'], ['besttime', 'BEST TIME'], ['followers', 'FOLLOWERS']].map(([id, label]) => (
+        {[['overview', 'OVERVIEW'], ['besttime', 'BEST TIME'], ['followers', 'FOLLOWERS'], ['links', 'LINKS']].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
             className={`rounded-md px-2.5 py-1 font-mono text-[11px] transition ${tab === id ? 'bg-coral text-white' : 'text-muted hover:text-fg'}`}>
             {label}
@@ -127,11 +128,9 @@ export default function Insights({ posts, onRefresh }) {
         ))}
       </div>
 
-      {tab === 'besttime' ? (
-        <BestTime posts={posts} />
-      ) : tab === 'followers' ? (
-        <FollowerGrowth />
-      ) : (
+      {tab === 'besttime' && <BestTime posts={posts} />}
+      {tab === 'followers' && <FollowerGrowth days={days} />}
+      {tab === 'overview' && (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="inline-flex rounded-lg border border-line p-0.5">
@@ -231,7 +230,7 @@ export default function Insights({ posts, onRefresh }) {
           </p>
         </>
       )}
-
+      {tab === 'links' && <LinkStats />}
     </div>
   )
 }

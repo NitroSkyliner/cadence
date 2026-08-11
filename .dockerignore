@@ -1,0 +1,8 @@
+node_modules
+dist
+server/.venv
+server/__pycache__
+server/cadence.db
+server/media
+**/.env
+.git

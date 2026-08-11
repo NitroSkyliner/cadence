@@ -3,3 +3,4 @@ uvicorn[standard]
 atproto
 httpx
 python-multipart
+cryptography

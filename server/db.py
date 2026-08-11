@@ -1,18 +1,21 @@
 import json
 import time
 import sqlite3
+import uuid
 from pathlib import Path
 from contextlib import contextmanager
+import os
 
 from models import Post
 
-BASE = Path(__file__).parent
-DB_PATH = BASE / "cadence.db"
-MEDIA_DIR = BASE / "media"
+DATA_DIR = Path(os.environ.get("DATA_DIR", str(Path(__file__).parent)))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = DATA_DIR / "cadence.db"
+MEDIA_DIR = DATA_DIR / "media"
 MEDIA_DIR.mkdir(exist_ok=True)
 
 _JSON_COLS = {"platforms", "results", "metrics", "media", "thread", "variants"}
-_MUTABLE = {"text", "platforms", "scheduledAt", "status", "results", "metrics", "repeat", "media", "thread", "variants", "first_comment", "category"}
+_MUTABLE = {"text", "platforms", "scheduledAt", "status", "results", "metrics", "repeat", "media", "thread", "variants", "first_comment", "category", "link_mode", "utm_campaign"}
 
 @contextmanager
 def _conn():
@@ -42,6 +45,8 @@ def init_db():
                 variants    TEXT NOT NULL DEFAULT '{}',
                 first_comment TEXT NOT NULL DEFAULT '',
                 category    TEXT,
+                link_mode    TEXT NOT NULL DEFAULT 'off',
+                utm_campaign TEXT NOT NULL DEFAULT '',
                 createdAt   INTEGER NOT NULL
             )
         """)
@@ -60,6 +65,10 @@ def init_db():
             c.execute("ALTER TABLE posts ADD COLUMN first_comment TEXT NOT NULL DEFAULT ''")
         if "category" not in cols:
             c.execute("ALTER TABLE posts ADD COLUMN category TEXT")
+        if "link_mode" not in cols:
+            c.execute("ALTER TABLE posts ADD COLUMN link_mode TEXT NOT NULL DEFAULT 'off'")
+        if "utm_campaign" not in cols:
+            c.execute("ALTER TABLE posts ADD COLUMN utm_campaign TEXT NOT NULL DEFAULT ''")
         c.execute("""
             CREATE TABLE IF NOT EXISTS connections (
                 id           TEXT PRIMARY KEY,   -- e.g. "bluesky:you.bsky.social"
@@ -127,6 +136,22 @@ def init_db():
             )
         """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_follow_time ON follower_snapshots (taken_at)")
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS links (
+                code       TEXT PRIMARY KEY,
+                url        TEXT NOT NULL,
+                post_id    TEXT,
+                platform   TEXT,
+                created_at INTEGER NOT NULL
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS clicks (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                code       TEXT NOT NULL,
+                clicked_at INTEGER NOT NULL
+            )
+        """)
 
 def _row_to_post(row) -> dict:
     return {
@@ -144,6 +169,8 @@ def _row_to_post(row) -> dict:
         "variants": json.loads(row["variants"]),
         "first_comment": row["first_comment"],
         "category": row["category"],
+        "link_mode": row["link_mode"],
+        "utm_campaign": row["utm_campaign"],
     }
 
 
@@ -163,8 +190,8 @@ def upsert_post(post: Post) -> dict:
     with _conn() as c:
         c.execute(
             """INSERT OR REPLACE INTO posts
-               (id, text, platforms, scheduledAt, status, results, metrics, repeat, media, thread, variants, first_comment, category, createdAt)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, text, platforms, scheduledAt, status, results, metrics, repeat, media, thread, variants, first_comment, category, link_mode, utm_campaign, createdAt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 post.id,
                 post.text,
@@ -179,6 +206,8 @@ def upsert_post(post: Post) -> dict:
                 json.dumps(post.variants),
                 post.first_comment,
                 post.category,
+                post.link_mode,
+                post.utm_campaign,
                 post.createdAt,
             ),
         )
@@ -351,4 +380,32 @@ def follower_snapshots_since(since_ms: int) -> list[dict]:
             "SELECT conn_id, followers, taken_at FROM follower_snapshots WHERE taken_at >= ? ORDER BY taken_at",
             (since_ms,),
         ).fetchall()
+    return [dict(r) for r in rows]
+
+def create_link(url: str, post_id: str, platform: str) -> str:
+    code = uuid.uuid4().hex[:8]
+    with _conn() as c:
+        c.execute("INSERT INTO links (code, url, post_id, platform, created_at) VALUES (?, ?, ?, ?, ?)",
+                  (code, url, post_id, platform, int(time.time() * 1000)))
+    return code
+
+
+def get_link(code: str) -> dict | None:
+    with _conn() as c:
+        row = c.execute("SELECT * FROM links WHERE code = ?", (code,)).fetchone()
+    return dict(row) if row else None
+
+
+def add_click(code: str):
+    with _conn() as c:
+        c.execute("INSERT INTO clicks (code, clicked_at) VALUES (?, ?)", (code, int(time.time() * 1000)))
+
+
+def click_counts() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("""
+            SELECT l.post_id, l.platform, l.url, COUNT(k.id) AS clicks
+            FROM links l LEFT JOIN clicks k ON k.code = l.code
+            GROUP BY l.code ORDER BY clicks DESC
+        """).fetchall()
     return [dict(r) for r in rows]

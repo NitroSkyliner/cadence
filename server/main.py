@@ -2,6 +2,9 @@ import asyncio
 import time
 import calendar
 import uuid
+import os
+import re
+
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 
@@ -19,14 +22,56 @@ from db import (
     init_db, list_posts, upsert_post, patch_post, get_post, delete_post,
     list_connections, get_connection, set_connection, delete_connection, resolve_target,
     MEDIA_DIR, add_media, get_media, list_categories, add_category, delete_category, list_media, delete_media, add_snapshot, snapshots_since,
-    add_follower_snapshot, follower_snapshots_since
+    add_follower_snapshot, follower_snapshots_since, create_link, get_link, add_click, click_counts
 )
-from oauth import is_oauth, new_state, consume_state, build_authorize_url, exchange_code
+
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
 
 POLL_SECONDS = 3
 METRICS_REFRESH_SECONDS = 300
 CATEGORY_COLORS = ["#5B8CFF", "#34D399", "#FBBF24", "#A78BFA", "#F472B6", "#22D3EE", "#FB7185", "#94A3B8"]
 
+
+PUBLIC_BASE = os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000")
+_URL_RE = re.compile(r'https?://\S+')
+
+
+def _append_utm(url, source, campaign):
+    from urllib.parse import urlparse, parse_qsl, urlencode
+    p = urlparse(url)
+    q = dict(parse_qsl(p.query))
+    q.setdefault("utm_source", source)
+    q.setdefault("utm_medium", "social")
+    q.setdefault("utm_campaign", campaign or "cadence")
+    return p._replace(query=urlencode(q)).geturl()
+
+
+def _process_links(text, platform, post, mode, campaign):
+    def repl(match):
+        url, trail = match.group(0), ""
+        while url and url[-1] in ".,!?)":
+            trail = url[-1] + trail; url = url[:-1]
+        dest = _append_utm(url, platform, campaign)
+        if mode == "utm":
+            return dest + trail
+        code = create_link(dest, post["id"], platform)       # 'tracked'
+        return f"{PUBLIC_BASE}/l/{code}" + trail
+    return _URL_RE.sub(repl, text)
+
+
+def _apply_links(post, platform):
+    mode = post.get("link_mode", "off")
+    if mode == "off":
+        return post
+    campaign = post.get("utm_campaign") or "cadence"
+    proc = lambda t: _process_links(t, platform, post, mode, campaign)
+    return {
+        **post,
+        "text": proc(post.get("text", "")),
+        "thread": [proc(s) for s in (post.get("thread") or [])],
+        "first_comment": proc(post.get("first_comment") or ""),
+    }
 
 def _popup_close_html(error: str | None) -> str:
     payload = "cadence-oauth-error" if error else "cadence-oauth-done"
@@ -80,7 +125,8 @@ async def _publish(post: dict):
         if is_oauth(conn["platform"]):
             await refresh_if_needed(conn["id"])
         variant = (post.get("variants") or {}).get(conn["platform"])
-        effective = {**post, "text": variant} if variant else post
+        staged = {**post, "text": variant} if variant else post
+        effective = _apply_links(staged, conn["platform"])     # UTM / short-link per platform
         try:
             results[platform_id] = await get_adapter(platform_id).publish(effective)
         except Exception as e:
@@ -164,7 +210,7 @@ app = FastAPI(title="Cadence API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=os.environ.get("CORS_ORIGINS", "http://localhost:5173").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -213,11 +259,6 @@ def remove_post(post_id: str) -> dict:
 async def refresh_metrics() -> list[dict]:
     await _refresh_all_metrics()
     return list_posts()
-
-REQUIRED_FIELDS = {
-    "bluesky":  ["handle", "app_password"],
-    "mastodon": ["instance_url", "access_token"],
-}
 
 
 # ---- media ----
@@ -393,3 +434,26 @@ def media_delete(media_id: str) -> dict:
 def metrics_history(days: int = 30) -> list[dict]:
     since = int((datetime.now(timezone.utc).timestamp() - days * 86400) * 1000)
     return snapshots_since(since)
+
+@app.get("/l/{code}")
+def redirect_link(code: str):
+    link = get_link(code)
+    if not link:
+        raise HTTPException(404, "Link not found")
+    add_click(code)
+    return RedirectResponse(link["url"], status_code=302)
+
+
+@app.get("/links/stats")
+def link_stats() -> list[dict]:
+    return click_counts()
+
+@app.get("/health")
+def health() -> dict:
+    return {"status": "ok"}
+
+
+# Serve the built SPA (production single-origin). MUST be after all API routes.
+_DIST = Path(os.environ.get("FRONTEND_DIST", str(Path(__file__).parent.parent / "dist")))
+if _DIST.exists():
+    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="spa")

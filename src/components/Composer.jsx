@@ -37,6 +37,8 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   const { categories, createCategory } = useCategories()
   const [category, setCategory] = useState(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [linkMode, setLinkMode] = useState('off')
+  const [utmCampaign, setUtmCampaign] = useState('')
 
   useEffect(() => {
     (async () => {
@@ -54,6 +56,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
 
   useEffect(() => {
     if (editing) {
+      setLinkMode(editing.link_mode || 'off'); setUtmCampaign(editing.utm_campaign || '')
       setCategory(editing.category || null)
       setText(editing.text); setVariants(editing.variants || {}); setThread(editing.thread || [])
       setFirstComment(editing.first_comment || ''); setFcOpen(Boolean(editing.first_comment))
@@ -70,6 +73,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
         setMedia(items)
       })()
     } else {
+      setLinkMode('off'); setUtmCampaign('')
       setText(''); setVariants({}); setThread([]); setSelected({}); setWhen(nowLocalInput())
       setRepeat(REPEAT.NONE); setMedia([]); setActiveTab('all')
       setFirstComment(''); setFcOpen(false)
@@ -107,6 +111,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
     setText(''); setVariants({}); setThread([]); setSelected({}); setWhen(nowLocalInput())
     setRepeat(REPEAT.NONE); setMedia([]); setActiveTab('all')
     setFirstComment(''); setFcOpen(false)
+    setLinkMode('off'); setUtmCampaign('')
   }
 
   const onFiles = async (e) => {
@@ -135,6 +140,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
     media: media.map((m) => m.id), thread: thread.map((s) => s.trim()).filter(Boolean),
     variants: Object.fromEntries(Object.entries(variants).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v)),
     first_comment: firstComment.trim(),
+    link_mode: linkMode, utm_campaign
   })
   const schedule = () => {
     if (!canSchedule) return
@@ -308,6 +314,20 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
           className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-muted transition hover:border-coral/40 hover:text-fg">
           + New
         </button>
+      </div>
+      
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[10px] tracking-wider text-muted">LINKS</span>
+        {[['off', 'Off'], ['utm', 'UTM tags'], ['tracked', 'Track clicks']].map(([id, label]) => (
+          <button key={id} onClick={() => setLinkMode(id)}
+            className={`rounded-full border px-2 py-0.5 font-mono text-[11px] transition ${linkMode === id ? 'border-coral bg-coral/12 text-coral' : 'border-line text-muted hover:text-fg'}`}>
+            {label}
+          </button>
+        ))}
+        {linkMode !== 'off' && (
+          <input value={utmCampaign} onChange={(e) => setUtmCampaign(e.target.value)} placeholder="campaign (optional)"
+            className="rounded-lg border border-line bg-elevated px-2 py-1 font-mono text-[11px] text-fg placeholder:text-muted outline-none transition focus:border-coral" />
+        )}
       </div>
 
       <div className="mt-4 flex items-center gap-3">

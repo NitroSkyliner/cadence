@@ -20,11 +20,12 @@ export const PLATFORMS = {
 }
 
 let counter = 0
-export function createPost({ text, platforms, scheduledAt, status = STATUS.SCHEDULED, repeat = REPEAT.NONE, media = [], thread = [], variants = {}, first_comment = '', category = null }) {
+export function createPost({ text, platforms, scheduledAt, status = STATUS.SCHEDULED, repeat = REPEAT.NONE, media = [], thread = [], variants = {}, first_comment = '', category = null, link_mode = 'off', utm_campaign = '' }) {
   return {
     id: `post_${Date.now()}_${counter++}`,
     text, platforms, scheduledAt,
-    status, results: {}, metrics: {}, repeat, media, thread, variants, first_comment, category, createdAt: Date.now(),
+    status, results: {}, metrics: {}, repeat, media, thread, variants, first_comment,
+    category, link_mode, utm_campaign, createdAt: Date.now(),
   }
 }
 

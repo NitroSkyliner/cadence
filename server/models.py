@@ -28,6 +28,8 @@ class Post(BaseModel):
     variants: dict[str, str] = Field(default_factory=dict)   # platform id -> override text
     first_comment: str = ""
     category: Optional[str] = None
+    link_mode: str = "off"          # off | utm | tracked
+    utm_campaign: str = ""
     createdAt: int
 
 
@@ -43,3 +45,5 @@ class PostPatch(BaseModel):
     thread: Optional[list[str]] = None
     variants: Optional[dict[str, str]] = None
     first_comment: Optional[str] = None
+    link_mode: Optional[str] = None
+    utm_campaign: Optional[str] = None
