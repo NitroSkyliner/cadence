@@ -2,8 +2,8 @@
 // nothing here knows how any specific platform works.
 
 export const STATUS = {
-  DRAFT: 'draft', SCHEDULED: 'scheduled', PUBLISHING: 'publishing',
-  PUBLISHED: 'published', FAILED: 'failed',
+  DRAFT: 'draft', PENDING: 'pending', SCHEDULED: 'scheduled', PUBLISHING: 'publishing',
+  PUBLISHED: 'published', FAILED: 'failed', REJECTED: 'rejected',
 }
 
 export const REPEAT = {

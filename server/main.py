@@ -23,7 +23,7 @@ from db import (
     list_connections, get_connection, set_connection, delete_connection, resolve_target,
     MEDIA_DIR, add_media, get_media, list_categories, add_category, delete_category, list_media, delete_media, add_snapshot, snapshots_since,
     add_follower_snapshot, follower_snapshots_since, create_link, get_link, add_click, click_counts, create_user, get_user_by_email, get_user, count_users,
-    create_session, get_session, delete_session,
+    create_session, get_session, delete_session,list_users, delete_user, update_user_role, count_admins,
 )
 
 from pathlib import Path
@@ -226,7 +226,7 @@ app.add_middleware(
 )
 
 SESSION_TTL_MS = 30 * 86400 * 1000
-_API_PREFIXES = ("/posts", "/media", "/accounts", "/categories", "/metrics", "/links", "/auth")
+_API_PREFIXES = ("/posts", "/media", "/accounts", "/categories", "/metrics", "/links", "/auth", "/users")
 _OPEN = {"/auth/status", "/auth/login", "/auth/register"}
 
 
@@ -257,6 +257,18 @@ def _user_from(request):
         return None
     return get_user(sess["user_id"])
 
+def _require_admin(request):
+    if not auth_enabled():
+        return                                    # single-user local: full access
+    user = getattr(request.state, "user", None)
+    if not user or user["role"] != "admin":
+        raise HTTPException(403, "Admin access required")
+
+def _is_member(request) -> bool:
+    if not auth_enabled():
+        return False
+    user = getattr(request.state, "user", None)
+    return bool(user and user["role"] == "member")
 
 @app.middleware("http")
 async def auth_gate(request, call_next):
@@ -278,7 +290,9 @@ def get_posts() -> list[dict]:
 
 
 @app.post("/posts")
-def create_post(post: Post) -> dict:
+def create_post(post: Post, request: Request) -> dict:
+    if _is_member(request) and post.status == "scheduled":
+        post.status = "pending"                 # members' posts await approval
     return upsert_post(post)
 
 @app.get("/metrics/followers")
@@ -289,8 +303,10 @@ def followers_history(days: int = 30) -> dict:
     return {"handles": conns, "snapshots": snaps}
 
 @app.patch("/posts/{post_id}")
-def update_post(post_id: str, patch: PostPatch) -> dict:
+def update_post(post_id: str, patch: PostPatch, request: Request) -> dict:
     changes = patch.model_dump(exclude_unset=True)
+    if _is_member(request) and changes.get("status") == "scheduled":
+        changes["status"] = "pending"
     existing = get_post(post_id)
     if existing is None:
         raise HTTPException(404, "Post not found")
@@ -335,6 +351,34 @@ def serve_media(media_id: str):
         raise HTTPException(404, "Media not found")
     return FileResponse(path, media_type=meta["content_type"], filename=meta["filename"])
 
+
+@app.get("/posts/pending")
+def posts_pending(request: Request) -> list[dict]:
+    _require_admin(request)
+    return [p for p in list_posts() if p["status"] == "pending"]
+
+
+@app.post("/posts/{post_id}/approve")
+def post_approve(post_id: str, request: Request) -> dict:
+    _require_admin(request)
+    post = get_post(post_id)
+    if not post:
+        raise HTTPException(404, "Post not found")
+    if post["status"] != "pending":
+        raise HTTPException(409, "Post is not pending review")
+    return patch_post(post_id, {"status": "scheduled"})
+
+
+@app.post("/posts/{post_id}/reject")
+def post_reject(post_id: str, body: dict, request: Request) -> dict:
+    _require_admin(request)
+    post = get_post(post_id)
+    if not post:
+        raise HTTPException(404, "Post not found")
+    reason = (body.get("reason") or "").strip()
+    return patch_post(post_id, {"status": "rejected", "results": {"_review": {"ok": False, "error": reason or "Rejected"}}})
+
+
 # ---- accounts ----
 REQUIRED_FIELDS = {
     "bluesky":  ["handle", "app_password"],
@@ -357,7 +401,8 @@ def get_accounts() -> list[dict]:
 
 
 @app.post("/accounts/{platform}")
-async def connect_account(platform: str, creds: dict) -> dict:
+async def connect_account(platform: str, creds: dict, request: Request) -> dict:
+    _require_admin(request)
     if platform not in PLATFORM_IDS:
         raise HTTPException(404, "Unknown platform")
     if not is_supported(platform):
@@ -380,7 +425,8 @@ async def connect_account(platform: str, creds: dict) -> dict:
 
 
 @app.delete("/accounts/{platform}/{handle}")
-def disconnect_account(platform: str, handle: str) -> dict:
+def disconnect_account(platform: str, handle: str, request: Request) -> dict:
+    _require_admin(request)
     from db import make_conn_id
     cid = make_conn_id(platform, handle)
     delete_connection(cid)
@@ -549,6 +595,52 @@ def auth_me(request: Request) -> dict:
     u = request.state.user
     return {"id": u["id"], "email": u["email"], "role": u["role"]}
 
+@app.get("/users")
+def users_list(request: Request) -> list[dict]:
+    _require_admin(request)
+    return list_users()
+
+
+@app.post("/users")
+def users_create(body: dict, request: Request) -> dict:
+    _require_admin(request)
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    role = body.get("role") if body.get("role") in ("admin", "member") else "member"
+    if "@" not in email or len(password) < 8:
+        raise HTTPException(422, "Valid email and 8+ char password required")
+    if get_user_by_email(email):
+        raise HTTPException(409, "A user with that email already exists")
+    salt, pw = hash_password(password)
+    uid = create_user(email, salt, pw, role)
+    return {"id": uid, "email": email, "role": role}
+
+
+@app.patch("/users/{uid}")
+def users_update(uid: str, body: dict, request: Request) -> dict:
+    _require_admin(request)
+    user = get_user(uid)
+    if not user:
+        raise HTTPException(404, "User not found")
+    role = body.get("role")
+    if role not in ("admin", "member"):
+        raise HTTPException(422, "role must be admin or member")
+    if user["role"] == "admin" and role == "member" and count_admins() <= 1:
+        raise HTTPException(400, "Can't demote the last admin")
+    update_user_role(uid, role)
+    return {"id": uid, "role": role}
+
+
+@app.delete("/users/{uid}")
+def users_delete(uid: str, request: Request) -> dict:
+    _require_admin(request)
+    user = get_user(uid)
+    if not user:
+        raise HTTPException(404, "User not found")
+    if user["role"] == "admin" and count_admins() <= 1:
+        raise HTTPException(400, "Can't remove the last admin")
+    delete_user(uid)
+    return {"ok": True, "id": uid}
 
 # Serve the built SPA (production single-origin). MUST be after all API routes.
 _DIST = Path(os.environ.get("FRONTEND_DIST", str(Path(__file__).parent.parent / "dist")))

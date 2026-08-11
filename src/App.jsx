@@ -15,6 +15,10 @@ import { PLATFORMS } from './core/types.js'
 import MediaLibrary from './components/MediaLibrary.jsx'
 import Login from './components/Login.jsx'
 import { installAuthFetch, authStatus, getToken, logout } from './core/auth.js'
+import Team from './components/Team.jsx'
+import { Users } from 'lucide-react'
+import Review from './components/Review.jsx'
+import { ClipboardCheck } from 'lucide-react'
 
 const NAV = [
   { id: 'queue', label: 'Queue', icon: ListChecks },
@@ -23,7 +27,7 @@ const NAV = [
   { id: 'library', label: 'Library', icon: Images },
   { id: 'insights', label: 'Insights', icon: BarChart3 },
   { id: 'accounts', label: 'Accounts', icon: Plug },
-  
+
 ]
 
 export default function App() {
@@ -34,18 +38,18 @@ export default function App() {
   const [editingId, setEditingId] = useState(null)
   const editing = posts.find((p) => p.id === editingId) || null
 
-  const [auth, setAuth] = useState({ state: 'loading', needsSetup: false })
+  const [auth, setAuth] = useState({ state: 'loading', needsSetup: false, user: null })
 
   useEffect(() => {
     installAuthFetch()
-    ;(async () => {
-      const status = await authStatus()
-      if (!status.enabled) { setAuth({ state: 'ready' }); return }        // auth off → open
-      if (!status.has_users) { setAuth({ state: 'login', needsSetup: true }); return }
-      if (!getToken()) { setAuth({ state: 'login', needsSetup: false }); return }
-      const me = await fetch(`${API}/auth/me`)                            // validate token
-      setAuth(me.ok ? { state: 'ready' } : { state: 'login', needsSetup: false })
-    })()
+      ; (async () => {
+        const status = await authStatus()
+        if (!status.enabled) { setAuth({ state: 'ready', user: null }); return }
+        if (!status.has_users) { setAuth({ state: 'login', needsSetup: true }); return }
+        if (!getToken()) { setAuth({ state: 'login', needsSetup: false }); return }
+        const res = await fetch(`${API}/auth/me`)
+        setAuth(res.ok ? { state: 'ready', user: await res.json() } : { state: 'login', needsSetup: false })
+      })()
   }, [])
 
   const { categories } = useCategories()
@@ -68,17 +72,28 @@ export default function App() {
     setEditingId(null)
   }
 
+  const pendingCount = posts.filter((p) => p.status === STATUS.PENDING).length
+  const currentUser = auth.user                         // null when auth disabled
+  const isAdmin = !currentUser || currentUser.role === 'admin'
+  const nav = NAV.filter((n) => n.id !== 'accounts' || isAdmin)
+  // if (currentUser?.role === 'admin') nav.push({ id: 'team', label: 'Team', icon: Users })
+  if (currentUser?.role === 'admin') {
+    nav.push({ id: 'review', label: 'Review', icon: ClipboardCheck, badge: pendingCount || null })
+    nav.push({ id: 'team', label: 'Team', icon: Users })
+  }
+
+
+
   if (auth.state === 'loading')
     return <div className="grid min-h-screen place-items-center bg-ink font-mono text-xs text-muted">Loading…</div>
   if (auth.state === 'login')
-    return <Login needsSetup={auth.needsSetup} onAuthed={() => setAuth({ state: 'ready' })} />
-
+    return <Login needsSetup={auth.needsSetup} onAuthed={(user) => setAuth({ state: 'ready', user })} />
   return (
     <div className="flex min-h-screen bg-ink font-display text-fg">
       <aside className="flex w-60 shrink-0 flex-col border-r border-line bg-surface">
         <div className="px-5 py-5"><Logo /></div>
         <nav className="flex flex-col gap-1 px-3">
-          {NAV.map(({ id, label, icon: Icon, soon }) => (
+          {nav.map(({ id, label, icon: Icon, soon, badge }) => (
             <button key={id} onClick={() => !soon && setView(id)} disabled={soon}
               className={`flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition
                 ${view === id ? 'bg-coral/12 text-fg'
@@ -86,15 +101,19 @@ export default function App() {
                     : 'text-muted hover:bg-elevated hover:text-fg'}`}>
               <Icon size={18} strokeWidth={1.75} className={view === id ? 'text-coral' : ''} />
               {label}
+              {badge != null && <span className="ml-auto rounded-full bg-coral px-1.5 font-mono text-[10px] text-white">{badge}</span>}
               {soon && <span className="ml-auto font-mono text-[10px] tracking-wider text-muted/40">SOON</span>}
             </button>
           ))}
         </nav>
         <div className="mt-auto flex flex-col gap-2 p-4">
-          <button onClick={() => setView('accounts')}
-            className="w-full rounded-lg border border-line px-3 py-2 text-sm text-muted transition hover:border-coral/40 hover:text-fg">
-            Connect account
-          </button>
+          {isAdmin && (
+
+            <button onClick={() => setView('accounts')}
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm text-muted transition hover:border-coral/40 hover:text-fg">
+              Connect account
+            </button>
+          )}
           {getToken() && (
             <button onClick={async () => { await logout(); setAuth({ state: 'login', needsSetup: false }) }}
               className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted transition hover:text-red-400">
@@ -130,6 +149,8 @@ export default function App() {
           {view === 'calendar' && <Calendar posts={posts} onReschedule={updatePost} />}
           {view === 'insights' && <Insights posts={posts} onRefresh={refreshMetrics} />}
           {view === 'accounts' && <Accounts />}
+          {view === 'team' && <Team currentUserId={currentUser?.id} />}
+          {view === 'review' && <Review onChange={() => { }} />}
         </main>
       </div>
     </div>

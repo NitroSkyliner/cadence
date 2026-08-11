@@ -6,6 +6,8 @@ const STYLES = {
   [STATUS.PUBLISHING]: { label: 'Publishing', cls: 'border-amber-500/40 bg-amber-500/10 text-amber-400' },
   [STATUS.PUBLISHED]:  { label: 'Published',  cls: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' },
   [STATUS.FAILED]:     { label: 'Failed',     cls: 'border-red-500/40 bg-red-500/10 text-red-400' },
+  [STATUS.PENDING]:  { label: 'Pending',  cls: 'border-amber-500/40 bg-amber-500/10 text-amber-400' },
+  [STATUS.REJECTED]: { label: 'Rejected', cls: 'border-red-500/40 bg-red-500/10 text-red-400' },
 }
 
 export default function StatusPill({ status }) {

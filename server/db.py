@@ -467,3 +467,25 @@ def get_session(token: str) -> dict | None:
 def delete_session(token: str):
     with _conn() as c:
         c.execute("DELETE FROM sessions WHERE token = ?", (token,))
+
+
+def list_users() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT id, email, role, created_at FROM users ORDER BY created_at").fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_user(uid: str):
+    with _conn() as c:
+        c.execute("DELETE FROM users WHERE id = ?", (uid,))
+        c.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
+
+
+def update_user_role(uid: str, role: str):
+    with _conn() as c:
+        c.execute("UPDATE users SET role = ? WHERE id = ?", (role, uid))
+
+
+def count_admins() -> int:
+    with _conn() as c:
+        return c.execute("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").fetchone()["n"]
