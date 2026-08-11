@@ -118,6 +118,16 @@ def init_db():
         """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_snap_time ON metric_snapshots (taken_at)")
 
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS follower_snapshots (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                conn_id   TEXT NOT NULL,
+                followers INTEGER NOT NULL,
+                taken_at  INTEGER NOT NULL
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_follow_time ON follower_snapshots (taken_at)")
+
 def _row_to_post(row) -> dict:
     return {
         "id": row["id"],
@@ -325,6 +335,20 @@ def snapshots_since(since_ms: int) -> list[dict]:
     with _conn() as c:
         rows = c.execute(
             "SELECT post_id, target, likes, reposts, replies, taken_at FROM metric_snapshots WHERE taken_at >= ? ORDER BY taken_at",
+            (since_ms,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+def add_follower_snapshot(conn_id: str, followers: int, taken_at: int):
+    with _conn() as c:
+        c.execute("INSERT INTO follower_snapshots (conn_id, followers, taken_at) VALUES (?, ?, ?)",
+                  (conn_id, followers, taken_at))
+
+
+def follower_snapshots_since(since_ms: int) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT conn_id, followers, taken_at FROM follower_snapshots WHERE taken_at >= ? ORDER BY taken_at",
             (since_ms,),
         ).fetchall()
     return [dict(r) for r in rows]

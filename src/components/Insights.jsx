@@ -3,6 +3,7 @@ import { STATUS, PLATFORMS } from '../core/types.js'
 import { useState, useMemo, useEffect } from 'react'
 import { API } from '../core/api.js'
 import TrendChart from './TrendChart.jsx'
+import BestTime from './BestTime.jsx'
 
 const RANGES = [
   { id: 7, label: '7D' }, { id: 30, label: '30D' }, { id: 90, label: '90D' }, { id: 0, label: 'ALL' },
@@ -14,6 +15,7 @@ const postEng = (p) => Object.values(p.metrics || {}).reduce((s, m) => s + engOf
 export default function Insights({ posts, onRefresh }) {
   const [days, setDays] = useState(30)
   const [refreshing, setRefreshing] = useState(false)
+  const [tab, setTab] = useState('overview')
 
   const published = useMemo(() => {
     const cutoff = days ? Date.now() - days * 86400000 : 0
@@ -115,6 +117,22 @@ export default function Insights({ posts, onRefresh }) {
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="inline-flex rounded-lg border border-line p-0.5">
+        {[['overview', 'OVERVIEW'], ['besttime', 'BEST TIME']].map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`rounded-md px-2.5 py-1 font-mono text-[11px] transition ${tab === id ? 'bg-coral text-white' : 'text-muted hover:text-fg'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'besttime' ? (
+        <BestTime posts={posts} />
+      ) : (
+        <>
+          {/* existing range selector, cards, trend, charts, top posts — leave all of that here unchanged */}
+        </>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-lg border border-line p-0.5">
           {RANGES.map((r) => (

@@ -16,3 +16,7 @@ class MockAdapter(Adapter):
             await asyncio.sleep(0.4)
             n = lambda: random.randint(0, 500)
             return {"likes": n(), "reposts": n(), "replies": n()}
+
+    async def fetch_followers(self) -> int | None:
+        import random
+        return 1000 + random.randint(-20, 40)

@@ -138,3 +138,14 @@ class BlueskyAdapter(Adapter):
     async def verify(self) -> str | None:
         await self._get_client()          # logs in; raises if handle/password are wrong
         return self._handle
+
+    async def fetch_followers(self) -> int | None:
+        try:
+            client = await self._get_client()
+            profile = await client.get_profile(self._handle)
+            return profile.followers_count
+        except Exception:
+            self._client = None
+            return None
+
+    

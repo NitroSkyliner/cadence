@@ -11,3 +11,6 @@ class Adapter:
     async def verify(self) -> str | None:
         """Log in / validate credentials. Return a display handle if known. Default: OK."""
         return None
+    async def fetch_followers(self) -> int | None:
+        """Current follower count for this account, or None if unavailable."""
+        return None

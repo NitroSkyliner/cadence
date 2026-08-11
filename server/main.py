@@ -18,7 +18,8 @@ from adapters.registry import (
 from db import (
     init_db, list_posts, upsert_post, patch_post, get_post, delete_post,
     list_connections, get_connection, set_connection, delete_connection, resolve_target,
-    MEDIA_DIR, add_media, get_media, list_categories, add_category, delete_category, list_media, delete_media, add_snapshot, snapshots_since
+    MEDIA_DIR, add_media, get_media, list_categories, add_category, delete_category, list_media, delete_media, add_snapshot, snapshots_since,
+    add_follower_snapshot, follower_snapshots_since
 )
 from oauth import is_oauth, new_state, consume_state, build_authorize_url, exchange_code
 
@@ -112,6 +113,16 @@ async def _refresh_all_metrics(since_days: int = 14):
         if metrics:
             patch_post(post["id"], {"metrics": metrics})
 
+async def _sample_followers():
+    now = int(datetime.now(timezone.utc).timestamp() * 1000)
+    for conn in list_connections():
+        try:
+            n = await get_adapter(conn["id"]).fetch_followers()
+            if n is not None:
+                add_follower_snapshot(conn["id"], n, now)
+        except Exception as e:
+            print(f"[followers] {conn['id']}: {e}")
+
 async def _worker():
     last_metrics = 0.0
     while True:
@@ -125,10 +136,12 @@ async def _worker():
             last_metrics = now                      # 0.0 start => also runs once right after boot
             try:
                 await _refresh_all_metrics()
+                await _sample_followers()
             except Exception as e:
                 print(f"[worker] metrics error: {e}")
 
         await asyncio.sleep(POLL_SECONDS)
+        
 
 def _seed_from_env():
     # One-time: import .env Bluesky creds into the DB if nothing's stored yet.
@@ -166,6 +179,13 @@ def get_posts() -> list[dict]:
 @app.post("/posts")
 def create_post(post: Post) -> dict:
     return upsert_post(post)
+
+@app.get("/metrics/followers")
+def followers_history(days: int = 30) -> dict:
+    since = int((datetime.now(timezone.utc).timestamp() - days * 86400) * 1000)
+    snaps = follower_snapshots_since(since)
+    conns = {c["id"]: c["handle"] for c in list_connections()}
+    return {"handles": conns, "snapshots": snaps}
 
 @app.patch("/posts/{post_id}")
 def update_post(post_id: str, patch: PostPatch) -> dict:

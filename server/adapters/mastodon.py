@@ -25,6 +25,15 @@ class MastodonAdapter(Adapter):
             host = self._base.split("://")[-1]
             return f"@{acct}@{host}" if acct else None
 
+    async def fetch_followers(self) -> int | None:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(f"{self._base}/api/v1/accounts/verify_credentials", headers=self._headers())
+                r.raise_for_status()
+                return r.json().get("followers_count")
+        except Exception:
+            return None
+        
     async def publish(self, post: dict) -> dict:
         try:
             async with httpx.AsyncClient(timeout=60) as client:
