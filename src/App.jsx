@@ -24,6 +24,7 @@ import { AlertTriangle } from 'lucide-react'
 import Notifications from './components/Notifications.jsx'
 import Inbox from './components/Inbox.jsx'
 import { Inbox as InboxIcon } from 'lucide-react'
+import { API, waitForServer } from './core/api.js'
 
 const NAV = [
   { id: 'queue', label: 'Queue', icon: ListChecks },
@@ -49,6 +50,7 @@ export default function App() {
   useEffect(() => {
     installAuthFetch()
       ; (async () => {
+        await waitForServer()
         const status = await authStatus()
         if (!status.enabled) { setAuth({ state: 'ready', user: null }); return }
         if (!status.has_users) { setAuth({ state: 'login', needsSetup: true }); return }
@@ -91,7 +93,14 @@ export default function App() {
   }
 
   if (auth.state === 'loading')
-    return <div className="grid min-h-screen place-items-center bg-ink font-mono text-xs text-muted">Loading…</div>
+    return (
+      <div className="grid min-h-screen place-items-center bg-ink">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-pulse"><Logo /></div>
+          <p className="font-mono text-xs text-muted">Starting Cadence…</p>
+        </div>
+      </div>
+    )
   if (auth.state === 'login')
     return <Login needsSetup={auth.needsSetup} onAuthed={(user) => setAuth({ state: 'ready', user })} />
   return (

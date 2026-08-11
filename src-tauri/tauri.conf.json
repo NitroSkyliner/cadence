@@ -13,7 +13,9 @@
     "windows": [
       { "title": "Cadence", "width": 1200, "height": 800, "minWidth": 940, "minHeight": 640 }
     ],
-    "security": { "csp": null }
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:8000 ipc: http://ipc.localhost; img-src 'self' data: http://localhost:8000; media-src 'self' http://localhost:8000; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com"
+    }
   },
   "bundle": {
     "active": true,
