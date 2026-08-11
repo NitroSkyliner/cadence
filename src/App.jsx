@@ -86,10 +86,6 @@ export default function App() {
     nav.push({ id: 'team', label: 'Team', icon: Users })
   }
 
-  {n.badge != null && (
-                <span className={`ml-auto rounded-full px-1.5 font-mono text-[10px] text-white ${n.danger ? 'bg-red-500' : 'bg-coral'}`}>{n.badge}</span>
-              )}
-
   if (auth.state === 'loading')
     return <div className="grid min-h-screen place-items-center bg-ink font-mono text-xs text-muted">Loading…</div>
   if (auth.state === 'login')
@@ -99,7 +95,7 @@ export default function App() {
       <aside className="flex w-60 shrink-0 flex-col border-r border-line bg-surface">
         <div className="px-5 py-5"><Logo /></div>
         <nav className="flex flex-col gap-1 px-3">
-          {nav.map(({ id, label, icon: Icon, soon, badge }) => (
+          {nav.map(({ id, label, icon: Icon, soon, badge, danger }) => (
             <button key={id} onClick={() => !soon && setView(id)} disabled={soon}
               className={`flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition
                 ${view === id ? 'bg-coral/12 text-fg'
@@ -107,7 +103,9 @@ export default function App() {
                     : 'text-muted hover:bg-elevated hover:text-fg'}`}>
               <Icon size={18} strokeWidth={1.75} className={view === id ? 'text-coral' : ''} />
               {label}
-              {badge != null && <span className="ml-auto rounded-full bg-coral px-1.5 font-mono text-[10px] text-white">{badge}</span>}
+              {badge != null && (
+                <span className={`ml-auto rounded-full px-1.5 font-mono text-[10px] text-white ${danger ? 'bg-red-500' : 'bg-coral'}`}>{badge}</span>
+              )}
               {soon && <span className="ml-auto font-mono text-[10px] tracking-wider text-muted/40">SOON</span>}
             </button>
           ))}
