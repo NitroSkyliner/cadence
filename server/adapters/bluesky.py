@@ -42,6 +42,20 @@ class BlueskyAdapter(Adapter):
                     else:
                         response = await client.send_post(text=post["text"])
 
+                thread = post.get("thread") or []
+                if thread:
+                    root_ref = models.create_strong_ref(response)
+                    parent_ref = root_ref
+                    for seg in thread:
+                        seg = seg.strip()
+                        if not seg:
+                            continue
+                        reply = await client.send_post(
+                            text=seg,
+                            reply_to=models.AppBskyFeedPost.ReplyRef(parent=parent_ref, root=root_ref),
+                        )
+                        parent_ref = models.create_strong_ref(reply)
+
                 return {"ok": True, "ref": response.uri}
 
             except Exception as e:

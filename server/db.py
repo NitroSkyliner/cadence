@@ -11,9 +11,8 @@ DB_PATH = BASE / "cadence.db"
 MEDIA_DIR = BASE / "media"
 MEDIA_DIR.mkdir(exist_ok=True)
 
-_JSON_COLS = {"platforms", "results", "metrics", "media"}
-_MUTABLE = {"text", "platforms", "scheduledAt", "status", "results", "metrics", "repeat", "media"}
-
+_JSON_COLS = {"platforms", "results", "metrics", "media", "thread", "variants"}
+_MUTABLE = {"text", "platforms", "scheduledAt", "status", "results", "metrics", "repeat", "media", "thread", "variants"}
 
 @contextmanager
 def _conn():
@@ -39,6 +38,8 @@ def init_db():
                 metrics     TEXT NOT NULL DEFAULT '{}',
                 repeat      TEXT NOT NULL DEFAULT 'none',
                 media       TEXT NOT NULL DEFAULT '[]',
+                thread      TEXT NOT NULL DEFAULT '[]',
+                variants    TEXT NOT NULL DEFAULT '{}',
                 createdAt   INTEGER NOT NULL
             )
         """)
@@ -49,6 +50,10 @@ def init_db():
             c.execute("ALTER TABLE posts ADD COLUMN repeat TEXT NOT NULL DEFAULT 'none'")
         if "media" not in cols:
             c.execute("ALTER TABLE posts ADD COLUMN media TEXT NOT NULL DEFAULT '[]'")
+        if "thread" not in cols:
+            c.execute("ALTER TABLE posts ADD COLUMN thread TEXT NOT NULL DEFAULT '[]'")
+        if "variants" not in cols:
+            c.execute("ALTER TABLE posts ADD COLUMN variants TEXT NOT NULL DEFAULT '{}'")
         c.execute("""
             CREATE TABLE IF NOT EXISTS connections (
                 id           TEXT PRIMARY KEY,   -- e.g. "bluesky:you.bsky.social"
@@ -98,6 +103,8 @@ def _row_to_post(row) -> dict:
         "repeat": row["repeat"],
         "media": json.loads(row["media"]),
         "createdAt": row["createdAt"],
+        "thread": json.loads(row["thread"]),
+        "variants": json.loads(row["variants"]),
     }
 
 
@@ -117,8 +124,8 @@ def upsert_post(post: Post) -> dict:
     with _conn() as c:
         c.execute(
             """INSERT OR REPLACE INTO posts
-               (id, text, platforms, scheduledAt, status, results, metrics, repeat, media, createdAt)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, text, platforms, scheduledAt, status, results, metrics, repeat, media, thread, variants, createdAt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 post.id,
                 post.text,
@@ -129,6 +136,8 @@ def upsert_post(post: Post) -> dict:
                 json.dumps({k: v.model_dump() for k, v in post.metrics.items()}),
                 post.repeat,
                 json.dumps(post.media),
+                json.dumps(post.thread),
+                json.dumps(post.variants),
                 post.createdAt,
             ),
         )

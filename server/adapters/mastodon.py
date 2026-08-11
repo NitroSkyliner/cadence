@@ -54,7 +54,22 @@ class MastodonAdapter(Adapter):
                     data=form,
                 )
                 r.raise_for_status()
-                return {"ok": True, "ref": str(r.json()["id"])}
+                first_id = str(r.json()["id"])
+
+                prev_id = first_id
+                for i, seg in enumerate(post.get("thread") or []):
+                    seg = seg.strip()
+                    if not seg:
+                        continue
+                    rr = await client.post(
+                        f"{self._base}/api/v1/statuses",
+                        headers={**self._headers(), "Idempotency-Key": f"{post['id']}-{i}"},
+                        data={"status": seg, "in_reply_to_id": prev_id},
+                    )
+                    rr.raise_for_status()
+                    prev_id = str(rr.json()["id"])
+
+                return {"ok": True, "ref": first_id}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

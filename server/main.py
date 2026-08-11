@@ -75,9 +75,11 @@ async def _publish(post: dict):
             results[target] = {"ok": False, "error": "account not connected"}
             continue
         if is_oauth(conn["platform"]):
-            await refresh_if_needed(conn["id"])           # keep token fresh before posting
+            await refresh_if_needed(conn["id"])
+        variant = (post.get("variants") or {}).get(conn["platform"])
+        effective = {**post, "text": variant} if variant else post
         try:
-            results[target] = await get_adapter(target).publish(post)
+            results[target] = await get_adapter(target).publish(effective)
         except Exception as e:
             results[target] = {"ok": False, "error": str(e)}
     all_ok = all(r.get("ok") for r in results.values())

@@ -20,11 +20,11 @@ export const PLATFORMS = {
 }
 
 let counter = 0
-export function createPost({ text, platforms, scheduledAt, status = STATUS.SCHEDULED, repeat = REPEAT.NONE, media = [] }) {
+export function createPost({ text, platforms, scheduledAt, status = STATUS.SCHEDULED, repeat = REPEAT.NONE, media = [], thread = [], variants = {} }) {
   return {
     id: `post_${Date.now()}_${counter++}`,
     text, platforms, scheduledAt,
-    status, results: {}, metrics: {}, repeat, media, createdAt: Date.now(),
+    status, results: {}, metrics: {}, repeat, media, thread, variants, createdAt: Date.now(),
   }
 }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Send, FileText, X, ImagePlus, Film, Loader2 } from 'lucide-react'
+import { Send, FileText, X, ImagePlus, Film, Loader2, Plus } from 'lucide-react'
 import { createPost, STATUS, REPEAT, PLATFORMS } from '../core/types.js'
 import { API } from '../core/api.js'
 
@@ -11,13 +11,17 @@ function isoToLocalInput(iso) {
   const d = new Date(iso)
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 }
+const platMax = (p) => PLATFORMS[p]?.maxLen ?? 500
 
 export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, onCancelEdit }) {
   const [text, setText] = useState('')
+  const [variants, setVariants] = useState({})       // platform -> override text
+  const [activeTab, setActiveTab] = useState('all')
+  const [thread, setThread] = useState([])
   const [selected, setSelected] = useState({})
   const [when, setWhen] = useState(nowLocalInput())
   const [repeat, setRepeat] = useState(REPEAT.NONE)
-  const [media, setMedia] = useState([])        // [{ id, url, content_type, alt }]
+  const [media, setMedia] = useState([])
   const [uploading, setUploading] = useState(false)
   const [accounts, setAccounts] = useState([])
   const imgRef = useRef(null)
@@ -40,9 +44,10 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
 
   useEffect(() => {
     if (editing) {
-      setText(editing.text)
+      setText(editing.text); setVariants(editing.variants || {}); setThread(editing.thread || [])
       setSelected(Object.fromEntries(editing.platforms.map((id) => [id, true])))
       setWhen(isoToLocalInput(editing.scheduledAt)); setRepeat(editing.repeat || REPEAT.NONE)
+      setActiveTab('all')
       ;(async () => {
         const items = await Promise.all((editing.media || []).map(async (id) => {
           try {
@@ -53,14 +58,24 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
         setMedia(items)
       })()
     } else {
-      setText(''); setSelected({}); setWhen(nowLocalInput()); setRepeat(REPEAT.NONE); setMedia([])
+      setText(''); setVariants({}); setThread([]); setSelected({}); setWhen(nowLocalInput())
+      setRepeat(REPEAT.NONE); setMedia([]); setActiveTab('all')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing?.id])
 
   const chosen = accounts.filter((a) => selected[a.id])
   const limit = chosen.length ? Math.min(...chosen.map((a) => a.maxLen)) : null
-  const over = limit != null && text.length > limit
+  const platformsInUse = [...new Set(chosen.map((a) => a.platform))]
+  const effTab = activeTab !== 'all' && platformsInUse.includes(activeTab) ? activeTab : 'all'
+
+  const activeText = effTab === 'all' ? text : (variants[effTab] ?? '')
+  const activeLimit = effTab === 'all' ? limit : platMax(effTab)
+  const setActiveText = (v) => (effTab === 'all' ? setText(v) : setVariants((s) => ({ ...s, [effTab]: v })))
+
+  const variantOver = Object.entries(variants).some(([p, v]) => v.length > platMax(p))
+  const threadOver = thread.some((s) => limit != null && s.length > limit)
+  const over = (limit != null && text.length > limit) || variantOver || threadOver
   const hasContent = text.trim().length > 0
   const canSchedule = hasContent && chosen.length > 0 && !over && !uploading
   const canDraft = hasContent && !over && !uploading
@@ -71,7 +86,13 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   const canAddVideo = media.length === 0 && !uploading
 
   const toggle = (id) => setSelected((s) => ({ ...s, [id]: !s[id] }))
-  const reset = () => { setText(''); setSelected({}); setWhen(nowLocalInput()); setRepeat(REPEAT.NONE); setMedia([]) }
+  const addSeg = () => setThread((t) => [...t, ''])
+  const setSeg = (i, v) => setThread((t) => t.map((s, idx) => (idx === i ? v : s)))
+  const delSeg = (i) => setThread((t) => t.filter((_, idx) => idx !== i))
+  const reset = () => {
+    setText(''); setVariants({}); setThread([]); setSelected({}); setWhen(nowLocalInput())
+    setRepeat(REPEAT.NONE); setMedia([]); setActiveTab('all')
+  }
 
   const onFiles = async (e) => {
     const files = Array.from(e.target.files || []); e.target.value = ''
@@ -87,7 +108,6 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
       }
     } catch (err) { console.error('Media upload failed:', err) } finally { setUploading(false) }
   }
-
   const removeMedia = (id) => setMedia((prev) => prev.filter((m) => m.id !== id))
   const setAlt = (id, alt) => setMedia((prev) => prev.map((m) => (m.id === id ? { ...m, alt } : m)))
   const saveAlt = (m) => fetch(`${API}/media/${m.id}`, {
@@ -96,7 +116,9 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
 
   const payload = () => ({
     text: text.trim(), platforms: chosen.map((a) => a.id),
-    scheduledAt: new Date(when).toISOString(), repeat, media: media.map((m) => m.id),
+    scheduledAt: new Date(when).toISOString(), repeat,
+    media: media.map((m) => m.id), thread: thread.map((s) => s.trim()).filter(Boolean),
+    variants: Object.fromEntries(Object.entries(variants).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v)),
   })
   const schedule = () => {
     if (!canSchedule) return
@@ -110,6 +132,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   }
 
   const videoToBluesky = hasVideo && chosen.some((a) => a.platform === 'bluesky')
+  const threadToFlat = thread.length > 0 && chosen.some((a) => a.platform === 'linkedin' || a.platform === 'threads')
 
   return (
     <section className="rounded-xl border border-line bg-surface p-5">
@@ -122,7 +145,25 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
         )}
       </div>
 
-      <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Type your caption…" rows={5}
+      {chosen.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1">
+          <button onClick={() => setActiveTab('all')}
+            className={`rounded-md px-2.5 py-1 font-mono text-[11px] transition ${effTab === 'all' ? 'bg-coral/12 text-coral' : 'text-muted hover:text-fg'}`}>
+            ALL
+          </button>
+          {platformsInUse.map((p) => (
+            <button key={p} onClick={() => setActiveTab(p)}
+              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-mono text-[11px] transition ${effTab === p ? 'bg-coral/12 text-coral' : 'text-muted hover:text-fg'}`}>
+              {PLATFORMS[p]?.short ?? p}
+              {(variants[p] || '').trim() && <span className="h-1.5 w-1.5 rounded-full bg-coral" />}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <textarea value={activeText} onChange={(e) => setActiveText(e.target.value)}
+        placeholder={effTab === 'all' ? 'Type your caption…' : `Override for ${PLATFORMS[effTab]?.label ?? effTab} — blank uses the base caption`}
+        rows={5}
         className="w-full resize-none rounded-lg border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted outline-none transition focus:border-coral" />
 
       {media.length > 0 && (
@@ -145,8 +186,32 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
         </div>
       )}
 
+      {thread.length > 0 && (
+        <div className="mt-3 flex flex-col gap-2 border-l-2 border-coral/30 pl-3">
+          {thread.map((seg, i) => (
+            <div key={i} className="relative">
+              <textarea value={seg} onChange={(e) => setSeg(i, e.target.value)} placeholder={`Thread part ${i + 2}…`} rows={2}
+                className="w-full resize-none rounded-lg border border-line bg-elevated px-3 py-2 pr-8 text-sm text-fg placeholder:text-muted outline-none transition focus:border-coral" />
+              <button onClick={() => delSeg(i)} className="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded text-muted transition hover:text-red-400">
+                <X size={12} strokeWidth={2} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <button onClick={addSeg} className="mt-2 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted transition hover:text-coral">
+        <Plus size={12} strokeWidth={2} /> ADD TO THREAD
+      </button>
+
+      {effTab !== 'all' && (
+        <p className="mt-2 font-mono text-[11px] text-muted">Editing {PLATFORMS[effTab]?.label} only. Thread &amp; media are shared across platforms.</p>
+      )}
       {videoToBluesky && (
-        <p className="mt-2 font-mono text-[11px] text-muted">Bluesky video needs a verified-email account and has daily limits; processing may take a moment before it publishes.</p>
+        <p className="mt-2 font-mono text-[11px] text-muted">Bluesky video needs a verified-email account and has daily limits.</p>
+      )}
+      {threadToFlat && (
+        <p className="mt-2 font-mono text-[11px] text-muted">Threads/LinkedIn post only the first part; Bluesky &amp; Mastodon post the full chain.</p>
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -179,8 +244,8 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
           <option value="none">Once</option><option value="daily">Daily</option>
           <option value="weekly">Weekly</option><option value="monthly">Monthly</option>
         </select>
-        <span className={`ml-auto font-mono text-xs ${over ? 'text-red-400' : 'text-muted'}`}>
-          {text.length}{limit != null ? ` / ${limit}` : ''}
+        <span className={`ml-auto font-mono text-xs ${(activeLimit != null && activeText.length > activeLimit) ? 'text-red-400' : 'text-muted'}`}>
+          {activeText.length}{activeLimit != null ? ` / ${activeLimit}` : ''}
         </span>
       </div>
 

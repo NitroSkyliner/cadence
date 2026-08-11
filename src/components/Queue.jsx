@@ -1,6 +1,6 @@
 import StatusPill from './StatusPill.jsx'
 import { STATUS, PLATFORMS } from '../core/types.js'
-import { Pencil, Trash2, Repeat, Image as ImageIcon } from 'lucide-react'
+import { Pencil, Trash2, Repeat, Image as ImageIcon, MessageSquare } from 'lucide-react'
 const EDITABLE = new Set([STATUS.DRAFT, STATUS.SCHEDULED, STATUS.FAILED])
 
 function fmtTime(iso) {
@@ -45,6 +45,12 @@ export default function Queue({ posts, onEdit, onDelete }) {
                   <ImageIcon size={12} strokeWidth={1.75} /> {post.media.length}
                 </span>
               )}
+              {post.thread?.length > 0 && (
+                <span title={`Thread of ${post.thread.length + 1}`} className="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-muted">
+                  <MessageSquare size={12} strokeWidth={1.75} /> {post.thread.length + 1}
+                </span>
+              )}
+              
               {post.repeat && post.repeat !== 'none' && (
                 <span title={`Repeats ${post.repeat}`} className="shrink-0 text-muted">
                   <Repeat size={13} strokeWidth={1.75} />

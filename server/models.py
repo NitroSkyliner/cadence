@@ -24,6 +24,8 @@ class Post(BaseModel):
     metrics: dict[str, PlatformMetrics] = Field(default_factory=dict)
     repeat: str = "none"
     media: list[str] = Field(default_factory=list)     # media ids
+    thread: list[str] = Field(default_factory=list)     # extra parts after the main text
+    variants: dict[str, str] = Field(default_factory=dict)   # platform id -> override text
     createdAt: int
 
 
@@ -36,3 +38,5 @@ class PostPatch(BaseModel):
     metrics: Optional[dict[str, PlatformMetrics]] = None
     repeat: Optional[str] = None
     media: Optional[list[str]] = None
+    thread: Optional[list[str]] = None
+    variants: Optional[dict[str, str]] = None
