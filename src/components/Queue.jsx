@@ -1,6 +1,8 @@
 import StatusPill from './StatusPill.jsx'
 import { STATUS, PLATFORMS } from '../core/types.js'
 import { Pencil, Trash2, Repeat, Image as ImageIcon, MessageSquare } from 'lucide-react'
+import { useCategories } from '../core/useCategories.js'
+
 const EDITABLE = new Set([STATUS.DRAFT, STATUS.SCHEDULED, STATUS.FAILED])
 
 function fmtTime(iso) {
@@ -16,6 +18,9 @@ const short = (t) => {
 }
 
 export default function Queue({ posts, onEdit, onDelete }) {
+  const { categories } = useCategories()
+  const catOf = (id) => categories.find((c) => c.id === id)
+  
   const sorted = [...posts].sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt))
 
   return (
@@ -31,6 +36,10 @@ export default function Queue({ posts, onEdit, onDelete }) {
           {sorted.map((post) => (
             <li key={post.id}
               className="group flex items-center gap-3 rounded-lg border border-line bg-elevated px-3 py-2.5">
+              {post.category && catOf(post.category) && (
+                <span title={catOf(post.category).name} className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ background: catOf(post.category).color }} />
+              )}
               <span className="w-24 shrink-0 font-mono text-xs text-muted">{fmtTime(post.scheduledAt)}</span>
               <span className="flex-1 truncate text-sm text-fg">{post.text}</span>
               <span className="flex shrink-0 gap-1">
@@ -50,7 +59,7 @@ export default function Queue({ posts, onEdit, onDelete }) {
                   <MessageSquare size={12} strokeWidth={1.75} /> {post.thread.length + 1}
                 </span>
               )}
-              
+
               {post.repeat && post.repeat !== 'none' && (
                 <span title={`Repeats ${post.repeat}`} className="shrink-0 text-muted">
                   <Repeat size={13} strokeWidth={1.75} />

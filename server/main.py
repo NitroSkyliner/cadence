@@ -18,12 +18,14 @@ from adapters.registry import (
 from db import (
     init_db, list_posts, upsert_post, patch_post, get_post, delete_post,
     list_connections, get_connection, set_connection, delete_connection, resolve_target,
-    MEDIA_DIR, add_media, get_media,
+    MEDIA_DIR, add_media, get_media, list_categories, add_category, delete_category
 )
 from oauth import is_oauth, new_state, consume_state, build_authorize_url, exchange_code
 
 POLL_SECONDS = 3
 METRICS_REFRESH_SECONDS = 300
+CATEGORY_COLORS = ["#5B8CFF", "#34D399", "#FBBF24", "#A78BFA", "#F472B6", "#22D3EE", "#FB7185", "#94A3B8"]
+
 
 def _popup_close_html(error: str | None) -> str:
     payload = "cadence-oauth-error" if error else "cadence-oauth-done"
@@ -333,3 +335,24 @@ def media_set_alt(media_id: str, body: dict) -> dict:
         raise HTTPException(404, "Media not found")
     set_media_alt(media_id, (body.get("alt") or "").strip())
     return {"ok": True}
+
+@app.get("/categories")
+def get_categories() -> list[dict]:
+    return list_categories()
+
+
+@app.post("/categories")
+def create_category(body: dict) -> dict:
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(422, "name is required")
+    color = body.get("color") or CATEGORY_COLORS[0]
+    cat_id = f"cat_{uuid.uuid4().hex[:8]}"
+    add_category(cat_id, name, color)
+    return {"id": cat_id, "name": name, "color": color}
+
+
+@app.delete("/categories/{cat_id}")
+def remove_category(cat_id: str) -> dict:
+    delete_category(cat_id)
+    return {"ok": True, "id": cat_id}

@@ -12,7 +12,8 @@ MEDIA_DIR = BASE / "media"
 MEDIA_DIR.mkdir(exist_ok=True)
 
 _JSON_COLS = {"platforms", "results", "metrics", "media", "thread", "variants"}
-_MUTABLE = {"text", "platforms", "scheduledAt", "status", "results", "metrics", "repeat", "media", "thread", "variants", "first_comment"}
+_MUTABLE = {"text", "platforms", "scheduledAt", "status", "results", "metrics", "repeat", "media", "thread", "variants", "first_comment", "category"}
+
 @contextmanager
 def _conn():
     conn = sqlite3.connect(DB_PATH, timeout=5)
@@ -40,6 +41,7 @@ def init_db():
                 thread      TEXT NOT NULL DEFAULT '[]',
                 variants    TEXT NOT NULL DEFAULT '{}',
                 first_comment TEXT NOT NULL DEFAULT '',
+                category    TEXT,
                 createdAt   INTEGER NOT NULL
             )
         """)
@@ -56,6 +58,8 @@ def init_db():
             c.execute("ALTER TABLE posts ADD COLUMN variants TEXT NOT NULL DEFAULT '{}'")
         if "first_comment" not in cols:
             c.execute("ALTER TABLE posts ADD COLUMN first_comment TEXT NOT NULL DEFAULT ''")
+        if "category" not in cols:
+            c.execute("ALTER TABLE posts ADD COLUMN category TEXT")
         c.execute("""
             CREATE TABLE IF NOT EXISTS connections (
                 id           TEXT PRIMARY KEY,   -- e.g. "bluesky:you.bsky.social"
@@ -93,6 +97,15 @@ def init_db():
         if "alt" not in mcols:
             c.execute("ALTER TABLE media ADD COLUMN alt TEXT NOT NULL DEFAULT ''")
 
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS categories (
+                id         TEXT PRIMARY KEY,
+                name       TEXT NOT NULL,
+                color      TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+        """)
+
 def _row_to_post(row) -> dict:
     return {
         "id": row["id"],
@@ -108,6 +121,7 @@ def _row_to_post(row) -> dict:
         "thread": json.loads(row["thread"]),
         "variants": json.loads(row["variants"]),
         "first_comment": row["first_comment"],
+        "category": row["category"],
     }
 
 
@@ -127,8 +141,8 @@ def upsert_post(post: Post) -> dict:
     with _conn() as c:
         c.execute(
             """INSERT OR REPLACE INTO posts
-               (id, text, platforms, scheduledAt, status, results, metrics, repeat, media, thread, variants, first_comment, createdAt)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, text, platforms, scheduledAt, status, results, metrics, repeat, media, thread, variants, first_comment, category, createdAt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 post.id,
                 post.text,
@@ -142,6 +156,7 @@ def upsert_post(post: Post) -> dict:
                 json.dumps(post.thread),
                 json.dumps(post.variants),
                 post.first_comment,
+                post.category,
                 post.createdAt,
             ),
         )
@@ -254,3 +269,21 @@ def read_media(media_id: str):
 def set_media_alt(media_id: str, alt: str):
     with _conn() as c:
         c.execute("UPDATE media SET alt = ? WHERE id = ?", (alt, media_id))
+
+
+def list_categories() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM categories ORDER BY created_at").fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_category(cat_id: str, name: str, color: str):
+    with _conn() as c:
+        c.execute("INSERT OR REPLACE INTO categories (id, name, color, created_at) VALUES (?, ?, ?, ?)",
+                  (cat_id, name, color, int(time.time() * 1000)))
+
+
+def delete_category(cat_id: str):
+    with _conn() as c:
+        c.execute("DELETE FROM categories WHERE id = ?", (cat_id,))
+        c.execute("UPDATE posts SET category = NULL WHERE category = ?", (cat_id,))   # unlink

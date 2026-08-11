@@ -27,6 +27,7 @@ class Post(BaseModel):
     thread: list[str] = Field(default_factory=list)     # extra parts after the main text
     variants: dict[str, str] = Field(default_factory=dict)   # platform id -> override text
     first_comment: str = ""
+    category: Optional[str] = None
     createdAt: int
 
 

@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { Send, FileText, X, ImagePlus, Film, Loader2, Plus, MessageCircle } from 'lucide-react'
+import { Send, FileText, X, ImagePlus, Film, Loader2, Plus, MessageCircle, Eye } from 'lucide-react'
+import Preview from './Preview.jsx'
 import { createPost, STATUS, REPEAT, PLATFORMS } from '../core/types.js'
 import { API } from '../core/api.js'
+import { useCategories } from '../core/useCategories.js'
 
 function nowLocalInput() {
   const d = new Date(); d.setSeconds(0, 0)
@@ -29,6 +31,9 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   const imgRef = useRef(null)
   const vidRef = useRef(null)
   const isEditing = Boolean(editing)
+  const [showPreview, setShowPreview] = useState(false)
+  const { categories, createCategory } = useCategories()
+  const [category, setCategory] = useState(null)
 
   useEffect(() => {
     (async () => {
@@ -46,6 +51,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
 
   useEffect(() => {
     if (editing) {
+      setCategory(editing.category || null)
       setText(editing.text); setVariants(editing.variants || {}); setThread(editing.thread || [])
       setFirstComment(editing.first_comment || ''); setFcOpen(Boolean(editing.first_comment))
       setSelected(Object.fromEntries(editing.platforms.map((id) => [id, true])))
@@ -94,6 +100,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   const setSeg = (i, v) => setThread((t) => t.map((s, idx) => (idx === i ? v : s)))
   const delSeg = (i) => setThread((t) => t.filter((_, idx) => idx !== i))
   const reset = () => {
+    setCategory(null)
     setText(''); setVariants({}); setThread([]); setSelected({}); setWhen(nowLocalInput())
     setRepeat(REPEAT.NONE); setMedia([]); setActiveTab('all')
     setFirstComment(''); setFcOpen(false)
@@ -140,15 +147,38 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
   const videoToBluesky = hasVideo && chosen.some((a) => a.platform === 'bluesky')
   const threadToFlat = thread.length > 0 && chosen.some((a) => a.platform === 'linkedin' || a.platform === 'threads')
 
+
+  const previews = platformsInUse.map((p) => {
+    const acct = chosen.find((a) => a.platform === p)
+    const supports = p === 'bluesky' || p === 'mastodon'
+    const t = (variants[p] || '').trim() || text
+    return {
+      platform: p, short: PLATFORMS[p]?.short ?? p, label: PLATFORMS[p]?.label ?? p,
+      handle: acct?.handle ?? p, text: t, media,
+      thread: supports ? thread.filter((s) => s.trim()) : [],
+      firstComment: supports ? firstComment.trim() : '',
+      charLimit: platMax(p), over: t.length > platMax(p),
+    }
+  })
+
+
   return (
     <section className="rounded-xl border border-line bg-surface p-5">
       <div className="mb-4 flex items-center justify-between">
         <p className="font-mono text-xs tracking-wider text-muted">{isEditing ? 'EDIT POST' : 'COMPOSER'}</p>
-        {isEditing && (
-          <button onClick={onCancelEdit} className="inline-flex items-center gap-1 font-mono text-[11px] text-muted transition hover:text-fg">
-            <X size={12} strokeWidth={2} /> CANCEL
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {chosen.length > 0 && hasContent && (
+            <button onClick={() => setShowPreview((v) => !v)}
+              className={`inline-flex items-center gap-1 font-mono text-[11px] transition hover:text-coral ${showPreview ? 'text-coral' : 'text-muted'}`}>
+              <Eye size={12} strokeWidth={2} /> PREVIEW
+            </button>
+          )}
+          {isEditing && (
+            <button onClick={onCancelEdit} className="inline-flex items-center gap-1 font-mono text-[11px] text-muted transition hover:text-fg">
+              <X size={12} strokeWidth={2} /> CANCEL
+            </button>
+          )}
+        </div>
       </div>
 
       {chosen.length > 0 && (
@@ -221,6 +251,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
           className="mt-2 w-full resize-none rounded-lg border border-line bg-elevated px-3 py-2 text-sm text-fg placeholder:text-muted outline-none transition focus:border-coral" />
       )}
 
+
       {effTab !== 'all' && (
         <p className="mt-2 font-mono text-[11px] text-muted">Editing {PLATFORMS[effTab]?.label} only. Thread &amp; media are shared across platforms.</p>
       )}
@@ -253,6 +284,25 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
         <input ref={vidRef} type="file" accept="video/*" onChange={onFiles} className="hidden" />
       </div>
 
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[10px] tracking-wider text-muted">CATEGORY</span>
+        <button onClick={() => setCategory(null)}
+          className={`rounded-full border px-2 py-0.5 font-mono text-[11px] transition ${!category ? 'border-line bg-elevated text-fg' : 'border-line text-muted hover:text-fg'}`}>
+          None
+        </button>
+        {categories.map((c) => (
+          <button key={c.id} onClick={() => setCategory(c.id)}
+            className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[11px] transition"
+            style={{ borderColor: category === c.id ? c.color : 'var(--color-line)', color: category === c.id ? c.color : 'var(--color-muted)' }}>
+            <span className="h-2 w-2 rounded-full" style={{ background: c.color }} /> {c.name}
+          </button>
+        ))}
+        <button onClick={async () => { const n = prompt('New category name'); if (n?.trim()) { const c = await createCategory(n.trim()); if (c) setCategory(c.id) } }}
+          className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-muted transition hover:border-coral/40 hover:text-fg">
+          + New
+        </button>
+      </div>
+
       <div className="mt-4 flex items-center gap-3">
         <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)}
           className="rounded-lg border border-line bg-elevated px-3 py-2 font-mono text-xs text-fg outline-none transition focus:border-coral [color-scheme:dark]" />
@@ -276,6 +326,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
           <Send size={16} strokeWidth={2} /> {isEditing ? 'Update' : 'Schedule post'}
         </button>
       </div>
+      {showPreview && chosen.length > 0 && <Preview renders={previews} />}
     </section>
   )
 }

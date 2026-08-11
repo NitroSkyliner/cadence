@@ -75,7 +75,7 @@ export default function App() {
               <Queue posts={posts} onEdit={setEditingId} onDelete={deletePost} />
             </div>
           )}
-          {view === 'calendar' && <Calendar posts={posts} />}
+          {view === 'calendar' && <Calendar posts={posts} onReschedule={updatePost} />}
           {view === 'insights' && <Insights posts={posts} onRefresh={refreshMetrics} />}
           {view === 'accounts' && <Accounts />}
         </main>
