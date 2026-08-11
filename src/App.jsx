@@ -6,14 +6,15 @@ import { usePosts } from './core/usePosts.js'
 import { STATUS } from './core/types.js'
 import Insights from './components/Insights.jsx'
 import Accounts from './components/Accounts.jsx'
-import { ListChecks, CalendarDays, BarChart3, Plug, Upload } from 'lucide-react'
+import { ListChecks, CalendarDays, BarChart3, Plug, Upload, Images, LogOut } from 'lucide-react'
 import Import from './components/Import.jsx'
 import { useCategories } from './core/useCategories.js'
 import { useState, useEffect } from 'react'
 import { API } from './core/api.js'
 import { PLATFORMS } from './core/types.js'
 import MediaLibrary from './components/MediaLibrary.jsx'
-import { Images } from 'lucide-react'
+import Login from './components/Login.jsx'
+import { installAuthFetch, authStatus, getToken, logout } from './core/auth.js'
 
 const NAV = [
   { id: 'queue', label: 'Queue', icon: ListChecks },
@@ -32,6 +33,20 @@ export default function App() {
   const activeLabel = NAV.find((n) => n.id === view)?.label ?? ''
   const [editingId, setEditingId] = useState(null)
   const editing = posts.find((p) => p.id === editingId) || null
+
+  const [auth, setAuth] = useState({ state: 'loading', needsSetup: false })
+
+  useEffect(() => {
+    installAuthFetch()
+    ;(async () => {
+      const status = await authStatus()
+      if (!status.enabled) { setAuth({ state: 'ready' }); return }        // auth off → open
+      if (!status.has_users) { setAuth({ state: 'login', needsSetup: true }); return }
+      if (!getToken()) { setAuth({ state: 'login', needsSetup: false }); return }
+      const me = await fetch(`${API}/auth/me`)                            // validate token
+      setAuth(me.ok ? { state: 'ready' } : { state: 'login', needsSetup: false })
+    })()
+  }, [])
 
   const { categories } = useCategories()
   const [importAccounts, setImportAccounts] = useState([])
@@ -53,6 +68,11 @@ export default function App() {
     setEditingId(null)
   }
 
+  if (auth.state === 'loading')
+    return <div className="grid min-h-screen place-items-center bg-ink font-mono text-xs text-muted">Loading…</div>
+  if (auth.state === 'login')
+    return <Login needsSetup={auth.needsSetup} onAuthed={() => setAuth({ state: 'ready' })} />
+
   return (
     <div className="flex min-h-screen bg-ink font-display text-fg">
       <aside className="flex w-60 shrink-0 flex-col border-r border-line bg-surface">
@@ -70,11 +90,17 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="mt-auto p-4">
+        <div className="mt-auto flex flex-col gap-2 p-4">
           <button onClick={() => setView('accounts')}
             className="w-full rounded-lg border border-line px-3 py-2 text-sm text-muted transition hover:border-coral/40 hover:text-fg">
             Connect account
           </button>
+          {getToken() && (
+            <button onClick={async () => { await logout(); setAuth({ state: 'login', needsSetup: false }) }}
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted transition hover:text-red-400">
+              <LogOut size={14} strokeWidth={1.75} /> Sign out
+            </button>
+          )}
         </div>
       </aside>
 

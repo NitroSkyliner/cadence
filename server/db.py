@@ -153,6 +153,23 @@ def init_db():
                 clicked_at INTEGER NOT NULL
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id            TEXT PRIMARY KEY,
+                email         TEXT UNIQUE NOT NULL,
+                salt          TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                role          TEXT NOT NULL DEFAULT 'member',
+                created_at    INTEGER NOT NULL
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                token      TEXT PRIMARY KEY,
+                user_id    TEXT NOT NULL,
+                expires_at INTEGER NOT NULL
+            )
+        """)
 
 def _row_to_post(row) -> dict:
     return {
@@ -409,3 +426,44 @@ def click_counts() -> list[dict]:
             GROUP BY l.code ORDER BY clicks DESC
         """).fetchall()
     return [dict(r) for r in rows]
+
+def create_user(email: str, salt: str, password_hash: str, role: str) -> str:
+    uid = f"user_{uuid.uuid4().hex[:12]}"
+    with _conn() as c:
+        c.execute("INSERT INTO users (id, email, salt, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                  (uid, email.lower(), salt, password_hash, role, int(time.time() * 1000)))
+    return uid
+
+
+def get_user_by_email(email: str) -> dict | None:
+    with _conn() as c:
+        row = c.execute("SELECT * FROM users WHERE email = ?", (email.lower(),)).fetchone()
+    return dict(row) if row else None
+
+
+def get_user(uid: str) -> dict | None:
+    with _conn() as c:
+        row = c.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone()
+    return dict(row) if row else None
+
+
+def count_users() -> int:
+    with _conn() as c:
+        return c.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+
+
+def create_session(token: str, user_id: str, expires_at: int):
+    with _conn() as c:
+        c.execute("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+                  (token, user_id, expires_at))
+
+
+def get_session(token: str) -> dict | None:
+    with _conn() as c:
+        row = c.execute("SELECT user_id, expires_at FROM sessions WHERE token = ?", (token,)).fetchone()
+    return dict(row) if row else None
+
+
+def delete_session(token: str):
+    with _conn() as c:
+        c.execute("DELETE FROM sessions WHERE token = ?", (token,))

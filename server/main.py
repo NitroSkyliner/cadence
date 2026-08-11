@@ -8,7 +8,7 @@ import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from oauth import is_oauth, new_state, consume_state, build_authorize_url, exchange_code
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,11 +22,15 @@ from db import (
     init_db, list_posts, upsert_post, patch_post, get_post, delete_post,
     list_connections, get_connection, set_connection, delete_connection, resolve_target,
     MEDIA_DIR, add_media, get_media, list_categories, add_category, delete_category, list_media, delete_media, add_snapshot, snapshots_since,
-    add_follower_snapshot, follower_snapshots_since, create_link, get_link, add_click, click_counts
+    add_follower_snapshot, follower_snapshots_since, create_link, get_link, add_click, click_counts, create_user, get_user_by_email, get_user, count_users,
+    create_session, get_session, delete_session,
 )
 
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+from authn import auth_enabled, hash_password, verify_password, new_token
+
 
 POLL_SECONDS = 3
 METRICS_REFRESH_SECONDS = 300
@@ -220,6 +224,51 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+SESSION_TTL_MS = 30 * 86400 * 1000
+_API_PREFIXES = ("/posts", "/media", "/accounts", "/categories", "/metrics", "/links", "/auth")
+_OPEN = {"/auth/status", "/auth/login", "/auth/register"}
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _needs_auth(method: str, path: str) -> bool:
+    if not auth_enabled():
+        return False
+    if not path.startswith(_API_PREFIXES):        # SPA, /health, /l/… → open
+        return False
+    if path in _OPEN:
+        return False
+    if method == "GET" and path.startswith("/media/") and path != "/media":
+        return False                              # serving files (img tags can't send headers)
+    if "/oauth/" in path:
+        return False                              # browser OAuth redirects
+    return True
+
+
+def _user_from(request):
+    h = request.headers.get("Authorization", "")
+    if not h.startswith("Bearer "):
+        return None
+    sess = get_session(h[7:])
+    if not sess or sess["expires_at"] < _now_ms():
+        return None
+    return get_user(sess["user_id"])
+
+
+@app.middleware("http")
+async def auth_gate(request, call_next):
+    if _needs_auth(request.method, request.url.path):
+        user = _user_from(request)
+        if not user:
+            return JSONResponse({"detail": "authentication required"}, status_code=401)
+        request.state.user = user
+    return await call_next(request)
+
+
+
 
 
 # ---- posts ----
@@ -457,6 +506,48 @@ def link_stats() -> list[dict]:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/auth/status")
+def auth_status() -> dict:
+    return {"enabled": auth_enabled(), "has_users": count_users() > 0}
+
+
+@app.post("/auth/register")
+def auth_register(body: dict) -> dict:
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    if "@" not in email or len(password) < 8:
+        raise HTTPException(422, "Valid email and 8+ char password required")
+    if count_users() > 0:                          # bootstrap only; admin-added users come later
+        raise HTTPException(403, "Registration is closed — ask an admin to add you")
+    salt, pw = hash_password(password)
+    uid = create_user(email, salt, pw, "admin")
+    return {"id": uid, "email": email, "role": "admin"}
+
+
+@app.post("/auth/login")
+def auth_login(body: dict) -> dict:
+    user = get_user_by_email((body.get("email") or "").strip())
+    if not user or not verify_password(body.get("password") or "", user["salt"], user["password_hash"]):
+        raise HTTPException(401, "Invalid email or password")
+    token = new_token()
+    create_session(token, user["id"], _now_ms() + SESSION_TTL_MS)
+    return {"token": token, "user": {"id": user["id"], "email": user["email"], "role": user["role"]}}
+
+
+@app.post("/auth/logout")
+def auth_logout(request: Request) -> dict:
+    h = request.headers.get("Authorization", "")
+    if h.startswith("Bearer "):
+        delete_session(h[7:])
+    return {"ok": True}
+
+
+@app.get("/auth/me")
+def auth_me(request: Request) -> dict:
+    u = request.state.user
+    return {"id": u["id"], "email": u["email"], "role": u["role"]}
 
 
 # Serve the built SPA (production single-origin). MUST be after all API routes.
