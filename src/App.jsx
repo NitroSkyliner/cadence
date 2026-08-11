@@ -21,6 +21,9 @@ import Review from './components/Review.jsx'
 import { ClipboardCheck } from 'lucide-react'
 import Failures from './components/Failures.jsx'
 import { AlertTriangle } from 'lucide-react'
+import Notifications from './components/Notifications.jsx'
+import Inbox from './components/Inbox.jsx'
+import { Inbox as InboxIcon } from 'lucide-react'
 
 const NAV = [
   { id: 'queue', label: 'Queue', icon: ListChecks },
@@ -29,6 +32,7 @@ const NAV = [
   { id: 'library', label: 'Library', icon: Images },
   { id: 'insights', label: 'Insights', icon: BarChart3 },
   { id: 'accounts', label: 'Accounts', icon: Plug },
+  { id: 'inbox', label: 'Inbox', icon: InboxIcon },
 
 ]
 
@@ -133,6 +137,7 @@ export default function App() {
             <h1 className="text-lg font-medium tracking-tight">{activeLabel}</h1>
             <p className="mt-0.5 font-mono text-xs text-muted">THIS WEEK · {scheduledCount} SCHEDULED</p>
           </div>
+          <Notifications />
         </header>
 
         <main className="flex-1 p-8">
@@ -155,7 +160,8 @@ export default function App() {
           {view === 'accounts' && <Accounts />}
           {view === 'team' && <Team currentUserId={currentUser?.id} />}
           {view === 'review' && <Review onChange={() => { }} />}
-            {view === 'failures' && <Failures posts={posts} onDelete={deletePost} />}
+          {view === 'failures' && <Failures posts={posts} onDelete={deletePost} />}
+          {view === 'inbox' && <Inbox />}
         </main>
       </div>
     </div>

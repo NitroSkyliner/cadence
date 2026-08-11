@@ -171,6 +171,19 @@ def init_db():
             )
         """)
 
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind       TEXT NOT NULL,          -- published | failed | pending
+                title      TEXT NOT NULL,
+                body       TEXT NOT NULL,
+                post_id    TEXT,
+                audience   TEXT NOT NULL DEFAULT 'all',   -- all | admin
+                read       INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_notif_time ON notifications (created_at DESC)")
         
 
 def _row_to_post(row) -> dict:
@@ -491,3 +504,32 @@ def update_user_role(uid: str, role: str):
 def count_admins() -> int:
     with _conn() as c:
         return c.execute("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").fetchone()["n"]
+
+def add_notification(kind, title, body, post_id=None, audience="all"):
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO notifications (kind, title, body, post_id, audience, read, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)",
+            (kind, title, body, post_id, audience, int(time.time() * 1000)),
+        )
+
+
+def list_notifications(is_admin: bool, limit: int = 50) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT * FROM notifications WHERE audience = 'all' OR (audience = 'admin' AND ?) ORDER BY created_at DESC LIMIT ?",
+            (1 if is_admin else 0, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def unread_count(is_admin: bool) -> int:
+    with _conn() as c:
+        return c.execute(
+            "SELECT COUNT(*) AS n FROM notifications WHERE read = 0 AND (audience = 'all' OR (audience = 'admin' AND ?))",
+            (1 if is_admin else 0,),
+        ).fetchone()["n"]
+
+
+def mark_all_read():
+    with _conn() as c:
+        c.execute("UPDATE notifications SET read = 1 WHERE read = 0")

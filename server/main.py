@@ -24,8 +24,9 @@ from db import (
     MEDIA_DIR, add_media, get_media, list_categories, add_category, delete_category, list_media, delete_media, add_snapshot, snapshots_since,
     add_follower_snapshot, follower_snapshots_since, create_link, get_link, add_click, click_counts, create_user, get_user_by_email, get_user, count_users,
     create_session, get_session, delete_session,list_users, delete_user, update_user_role, count_admins,
+    add_notification, list_notifications, unread_count, mark_all_read
 )
-
+from notify import send_email
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -121,6 +122,7 @@ async def _publish(post: dict):
     from oauth import is_oauth, refresh_if_needed
     prior = post.get("results") or {}
     patch_post(post["id"], {"status": "publishing"})
+
     results = {t: r for t, r in prior.items() if r.get("ok") and t != "_review"}   # keep wins
     for target in post["platforms"]:
         if results.get(target, {}).get("ok"):
@@ -140,6 +142,14 @@ async def _publish(post: dict):
             results[target] = {"ok": False, "error": str(e)}
     all_ok = all(results.get(t, {}).get("ok") for t in post["platforms"])
     patch_post(post["id"], {"status": "published" if all_ok else "failed", "results": results})
+
+    snippet = (post["text"][:60] + "…") if len(post["text"]) > 60 else post["text"]
+    if all_ok:
+        add_notification("published", "Post published", snippet, post["id"])
+    else:
+        errs = "; ".join(f"{t}: {r.get('error')}" for t, r in results.items() if t != "_review" and not r.get("ok"))
+        add_notification("failed", "Post failed", f"{snippet} — {errs}", post["id"])
+        send_email("A scheduled post failed", f"{post['text']}\n\n{errs}")
 
 async def _publish_due():
     now = datetime.now(timezone.utc)
@@ -229,7 +239,7 @@ app.add_middleware(
 )
 
 SESSION_TTL_MS = 30 * 86400 * 1000
-_API_PREFIXES = ("/posts", "/media", "/accounts", "/categories", "/metrics", "/links", "/auth", "/users")
+_API_PREFIXES = ("/posts", "/media", "/accounts", "/categories", "/metrics", "/links", "/auth", "/users", "/notifications", "/inbox")
 _OPEN = {"/auth/status", "/auth/login", "/auth/register"}
 
 
@@ -295,7 +305,9 @@ def get_posts() -> list[dict]:
 @app.post("/posts")
 def create_post(post: Post, request: Request) -> dict:
     if _is_member(request) and post.status == "scheduled":
-        post.status = "pending"                 # members' posts await approval
+        post.status = "pending"
+        snippet = (post.text[:60] + "…") if len(post.text) > 60 else post.text
+        add_notification("pending", "Post awaiting review", snippet, post.id, audience="admin")
     return upsert_post(post)
 
 @app.get("/metrics/followers")
@@ -380,7 +392,10 @@ def post_retry(post_id: str) -> dict:
         raise HTTPException(404, "Post not found")
     if post["status"] != "failed":
         raise HTTPException(409, "Only failed posts can be retried")
-    return patch_post(post_id, {"status": "scheduled"})   # worker re-runs, skipping prior wins
+    updated = patch_post(post_id, {"status": "scheduled"})   # worker re-runs, skipping prior wins
+    if updated is None:
+        raise HTTPException(404, "Post not found")
+    return updated
 
 @app.post("/posts/{post_id}/reject")
 def post_reject(post_id: str, body: dict, request: Request) -> dict:
@@ -657,7 +672,51 @@ def users_delete(uid: str, request: Request) -> dict:
     delete_user(uid)
     return {"ok": True, "id": uid}
 
+def _is_admin_req(request) -> bool:
+    if not auth_enabled():
+        return True
+    u = getattr(request.state, "user", None)
+    return bool(u and u["role"] == "admin")
+
+
+@app.get("/notifications")
+def notifications_list(request: Request) -> dict:
+    admin = _is_admin_req(request)
+    return {"items": list_notifications(admin), "unread": unread_count(admin)}
+
+
+@app.post("/notifications/read")
+def notifications_read() -> dict:
+    mark_all_read()
+    return {"ok": True}
+
+@app.get("/inbox")
+async def inbox() -> list[dict]:
+    out = []
+    for conn in list_connections():
+        try:
+            items = await get_adapter(conn["id"]).fetch_inbox()
+            for it in items:
+                it["conn_id"] = conn["id"]; it["platform"] = conn["platform"]; it["account"] = conn["handle"]
+            out.extend(items)
+        except Exception as e:
+            print(f"[inbox] {conn['id']}: {e}")
+    out.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    return out
+
+
+@app.post("/inbox/reply")
+async def inbox_reply(body: dict) -> dict:
+    conn_id = body.get("conn_id"); text = (body.get("text") or "").strip()
+    if not conn_id or not text:
+        raise HTTPException(422, "conn_id and text required")
+    res = await get_adapter(conn_id).reply(body.get("reply_ctx") or {}, text)
+    if not res.get("ok"):
+        raise HTTPException(400, res.get("error") or "reply failed")
+    return {"ok": True}
+
 # Serve the built SPA (production single-origin). MUST be after all API routes.
 _DIST = Path(os.environ.get("FRONTEND_DIST", str(Path(__file__).parent.parent / "dist")))
 if _DIST.exists():
     app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="spa")
+

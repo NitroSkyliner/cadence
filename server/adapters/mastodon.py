@@ -3,7 +3,9 @@ import asyncio
 from db import load_media_bytes
 from .base import Adapter
 from db import read_media
-
+import re
+import html as _html
+from datetime import datetime
 
 class MastodonAdapter(Adapter):
     def __init__(self, instance_url: str, access_token: str):
@@ -91,6 +93,7 @@ class MastodonAdapter(Adapter):
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    
     async def _wait_for_media(self, client, remote_id, attempts=8):
         delay = 1.0
         for _ in range(attempts):
@@ -116,3 +119,41 @@ class MastodonAdapter(Adapter):
                 "reposts": s.get("reblogs_count", 0) or 0,
                 "replies": s.get("replies_count", 0) or 0,
             }
+    async def fetch_inbox(self) -> list[dict]:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(f"{self._base}/api/v1/notifications",
+                                 headers=self._headers(), params={"types[]": "mention", "limit": 40})
+            r.raise_for_status()
+            items = []
+            for n in r.json():
+                st = n.get("status") or {}
+                try:
+                    ts = int(datetime.fromisoformat(n["created_at"].replace("Z", "+00:00")).timestamp() * 1000)
+                except Exception:
+                    ts = 0
+                items.append({
+                    "id": str(n["id"]),
+                    "author": n["account"]["acct"],
+                    "author_name": n["account"].get("display_name") or n["account"]["acct"],
+                    "text": _strip_html(st.get("content", "")),
+                    "reason": "mention",
+                    "created_at": ts,
+                    "reply_ctx": {"status_id": st.get("id")},
+                })
+            return items
+
+    async def reply(self, ctx: dict, text: str) -> dict:
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.post(f"{self._base}/api/v1/statuses", headers=self._headers(),
+                                      data={"status": text, "in_reply_to_id": ctx.get("status_id")})
+                r.raise_for_status()
+                return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+def _strip_html(s: str) -> str:
+    s = re.sub(r"<br\s*/?>", "\n", s)
+    s = re.sub(r"</p>", "\n", s)
+    s = re.sub(r"<[^>]+>", "", s)
+    return _html.unescape(s).strip()

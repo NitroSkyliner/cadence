@@ -14,3 +14,9 @@ class Adapter:
     async def fetch_followers(self) -> int | None:
         """Current follower count for this account, or None if unavailable."""
         return None
+
+    async def fetch_inbox(self) -> list[dict]:
+        return []
+
+    async def reply(self, ctx: dict, text: str) -> dict:
+        return {"ok": False, "error": f"{self.platform_id} does not support replies"}

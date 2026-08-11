@@ -20,3 +20,18 @@ class MockAdapter(Adapter):
     async def fetch_followers(self) -> int | None:
         import random
         return 1000 + random.randint(-20, 40)
+
+    async def fetch_inbox(self) -> list[dict]:
+        now = int(time.time() * 1000)
+        return [
+            {"id": f"mock-{self.platform_id}-1", "author": "someone", "author_name": "Someone",
+             "text": "Love this — when's the next one?", "reason": "reply",
+             "created_at": now - 3_600_000, "reply_ctx": {"mock": True}},
+            {"id": f"mock-{self.platform_id}-2", "author": "afan", "author_name": "A Fan",
+             "text": f"@you great post on {self.platform_id}!", "reason": "mention",
+             "created_at": now - 7_200_000, "reply_ctx": {"mock": True}},
+        ]
+
+    async def reply(self, ctx: dict, text: str) -> dict:
+        await asyncio.sleep(0.3)
+        return {"ok": True}

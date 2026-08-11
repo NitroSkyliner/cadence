@@ -148,4 +148,43 @@ class BlueskyAdapter(Adapter):
             self._client = None
             return None
 
-    
+    async def fetch_inbox(self) -> list[dict]:
+        from datetime import datetime
+        client = await self._get_client()
+        resp = await client.app.bsky.notification.list_notifications()
+        items = []
+        for n in resp.notifications:
+            if n.reason not in ("reply", "mention", "quote"):
+                continue
+            rec = n.record
+            root_uri, root_cid = n.uri, n.cid
+            reply = getattr(rec, "reply", None)
+            if reply is not None and getattr(reply, "root", None) is not None:
+                root_uri, root_cid = reply.root.uri, reply.root.cid
+            try:
+                ts = int(datetime.fromisoformat(n.indexed_at.replace("Z", "+00:00")).timestamp() * 1000)
+            except Exception:
+                ts = 0
+            items.append({
+                "id": n.uri,
+                "author": n.author.handle,
+                "author_name": n.author.display_name or n.author.handle,
+                "text": getattr(rec, "text", "") or "",
+                "reason": n.reason,
+                "created_at": ts,
+                "reply_ctx": {"uri": n.uri, "cid": n.cid, "root_uri": root_uri, "root_cid": root_cid},
+            })
+        return items
+
+    async def reply(self, ctx: dict, text: str) -> dict:
+        try:
+            client = await self._get_client()
+            parent = models.ComAtprotoRepoStrongRef.Main(uri=ctx["uri"], cid=ctx["cid"])
+            root = models.ComAtprotoRepoStrongRef.Main(
+                uri=ctx.get("root_uri", ctx["uri"]), cid=ctx.get("root_cid", ctx["cid"]))
+            await client.send_post(text=text,
+                                   reply_to=models.AppBskyFeedPost.ReplyRef(parent=parent, root=root))
+            return {"ok": True}
+        except Exception as e:
+            self._client = None
+            return {"ok": False, "error": str(e)}
