@@ -19,6 +19,8 @@ import Team from './components/Team.jsx'
 import { Users } from 'lucide-react'
 import Review from './components/Review.jsx'
 import { ClipboardCheck } from 'lucide-react'
+import Failures from './components/Failures.jsx'
+import { AlertTriangle } from 'lucide-react'
 
 const NAV = [
   { id: 'queue', label: 'Queue', icon: ListChecks },
@@ -77,12 +79,16 @@ export default function App() {
   const isAdmin = !currentUser || currentUser.role === 'admin'
   const nav = NAV.filter((n) => n.id !== 'accounts' || isAdmin)
   // if (currentUser?.role === 'admin') nav.push({ id: 'team', label: 'Team', icon: Users })
+  const failedCount = posts.filter((p) => p.status === STATUS.FAILED).length
+  nav.push({ id: 'failures', label: 'Failures', icon: AlertTriangle, badge: failedCount || null, danger: true })
   if (currentUser?.role === 'admin') {
     nav.push({ id: 'review', label: 'Review', icon: ClipboardCheck, badge: pendingCount || null })
     nav.push({ id: 'team', label: 'Team', icon: Users })
   }
 
-
+  {n.badge != null && (
+                <span className={`ml-auto rounded-full px-1.5 font-mono text-[10px] text-white ${n.danger ? 'bg-red-500' : 'bg-coral'}`}>{n.badge}</span>
+              )}
 
   if (auth.state === 'loading')
     return <div className="grid min-h-screen place-items-center bg-ink font-mono text-xs text-muted">Loading…</div>
@@ -151,6 +157,7 @@ export default function App() {
           {view === 'accounts' && <Accounts />}
           {view === 'team' && <Team currentUserId={currentUser?.id} />}
           {view === 'review' && <Review onChange={() => { }} />}
+            {view === 'failures' && <Failures posts={posts} onDelete={deletePost} />}
         </main>
       </div>
     </div>

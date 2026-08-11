@@ -171,6 +171,8 @@ def init_db():
             )
         """)
 
+        
+
 def _row_to_post(row) -> dict:
     return {
         "id": row["id"],

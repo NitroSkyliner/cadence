@@ -119,23 +119,26 @@ def _next_occurrence(iso: str, repeat: str, now: datetime) -> datetime | None:
 
 async def _publish(post: dict):
     from oauth import is_oauth, refresh_if_needed
+    prior = post.get("results") or {}
     patch_post(post["id"], {"status": "publishing"})
-    results = {}
-    for platform_id in post["platforms"]:
-        conn = resolve_target(platform_id)
+    results = {t: r for t, r in prior.items() if r.get("ok") and t != "_review"}   # keep wins
+    for target in post["platforms"]:
+        if results.get(target, {}).get("ok"):
+            continue                                   # already posted — don't repeat it
+        conn = resolve_target(target)
         if conn is None:
-            results[platform_id] = {"ok": False, "error": "account not connected"}
+            results[target] = {"ok": False, "error": "account not connected"}
             continue
         if is_oauth(conn["platform"]):
             await refresh_if_needed(conn["id"])
         variant = (post.get("variants") or {}).get(conn["platform"])
         staged = {**post, "text": variant} if variant else post
-        effective = _apply_links(staged, conn["platform"])     # UTM / short-link per platform
+        effective = _apply_links(staged, conn["platform"])
         try:
-            results[platform_id] = await get_adapter(platform_id).publish(effective)
+            results[target] = await get_adapter(target).publish(effective)
         except Exception as e:
-            results[platform_id] = {"ok": False, "error": str(e)}
-    all_ok = all(r.get("ok") for r in results.values())
+            results[target] = {"ok": False, "error": str(e)}
+    all_ok = all(results.get(t, {}).get("ok") for t in post["platforms"])
     patch_post(post["id"], {"status": "published" if all_ok else "failed", "results": results})
 
 async def _publish_due():
@@ -357,7 +360,6 @@ def posts_pending(request: Request) -> list[dict]:
     _require_admin(request)
     return [p for p in list_posts() if p["status"] == "pending"]
 
-
 @app.post("/posts/{post_id}/approve")
 def post_approve(post_id: str, request: Request) -> dict:
     _require_admin(request)
@@ -366,8 +368,19 @@ def post_approve(post_id: str, request: Request) -> dict:
         raise HTTPException(404, "Post not found")
     if post["status"] != "pending":
         raise HTTPException(409, "Post is not pending review")
-    return patch_post(post_id, {"status": "scheduled"})
+    updated = patch_post(post_id, {"status": "scheduled"})
+    if updated is None:
+        raise HTTPException(404, "Post not found")
+    return updated
 
+@app.post("/posts/{post_id}/retry")
+def post_retry(post_id: str) -> dict:
+    post = get_post(post_id)
+    if not post:
+        raise HTTPException(404, "Post not found")
+    if post["status"] != "failed":
+        raise HTTPException(409, "Only failed posts can be retried")
+    return patch_post(post_id, {"status": "scheduled"})   # worker re-runs, skipping prior wins
 
 @app.post("/posts/{post_id}/reject")
 def post_reject(post_id: str, body: dict, request: Request) -> dict:
@@ -376,8 +389,10 @@ def post_reject(post_id: str, body: dict, request: Request) -> dict:
     if not post:
         raise HTTPException(404, "Post not found")
     reason = (body.get("reason") or "").strip()
-    return patch_post(post_id, {"status": "rejected", "results": {"_review": {"ok": False, "error": reason or "Rejected"}}})
-
+    updated = patch_post(post_id, {"status": "rejected", "results": {"_review": {"ok": False, "error": reason or "Rejected"}}})
+    if updated is None:
+        raise HTTPException(404, "Post not found")
+    return updated
 
 # ---- accounts ----
 REQUIRED_FIELDS = {
@@ -606,7 +621,7 @@ def users_create(body: dict, request: Request) -> dict:
     _require_admin(request)
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
-    role = body.get("role") if body.get("role") in ("admin", "member") else "member"
+    role = "admin" if body.get("role") == "admin" else "member"
     if "@" not in email or len(password) < 8:
         raise HTTPException(422, "Valid email and 8+ char password required")
     if get_user_by_email(email):
