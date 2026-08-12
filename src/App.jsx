@@ -10,7 +10,6 @@ import { ListChecks, CalendarDays, BarChart3, Plug, Upload, Images, LogOut } fro
 import Import from './components/Import.jsx'
 import { useCategories } from './core/useCategories.js'
 import { useState, useEffect } from 'react'
-import { API } from './core/api.js'
 import { PLATFORMS } from './core/types.js'
 import MediaLibrary from './components/MediaLibrary.jsx'
 import Login from './components/Login.jsx'
@@ -100,7 +99,7 @@ export default function App() {
           <p className="font-mono text-xs text-muted">Starting Cadence…</p>
         </div>
       </div>
-    )
+    ) 
   if (auth.state === 'login')
     return <Login needsSetup={auth.needsSetup} onAuthed={(user) => setAuth({ state: 'ready', user })} />
   return (
