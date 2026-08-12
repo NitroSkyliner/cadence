@@ -140,7 +140,7 @@ export default function Composer({ editing, onSchedule, onSaveDraft, onUpdate, o
     media: media.map((m) => m.id), thread: thread.map((s) => s.trim()).filter(Boolean),
     variants: Object.fromEntries(Object.entries(variants).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v)),
     first_comment: firstComment.trim(),
-    link_mode: linkMode, utm_campaign
+    link_mode: linkMode, utm_campaign: utmCampaign
   })
   const schedule = () => {
     if (!canSchedule) return

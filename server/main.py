@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, JSONResponse
 from oauth import is_oauth, new_state, consume_state, build_authorize_url, exchange_code
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -29,7 +29,6 @@ from db import (
 from notify import send_email
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
 from authn import auth_enabled, hash_password, verify_password, new_token
 
 
@@ -119,7 +118,7 @@ def _next_occurrence(iso: str, repeat: str, now: datetime) -> datetime | None:
     return nxt
 
 async def _publish(post: dict):
-    from oauth import is_oauth, refresh_if_needed
+    from oauth import refresh_if_needed
     prior = post.get("results") or {}
     patch_post(post["id"], {"status": "publishing"})
 
@@ -515,7 +514,6 @@ def mock_token() -> dict:
 
 @app.get("/media/{media_id}/meta")
 def media_meta(media_id: str) -> dict:
-    from db import get_media
     meta = get_media(media_id)
     if meta is None:
         raise HTTPException(404, "Media not found")
